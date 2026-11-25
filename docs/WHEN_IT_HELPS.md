@@ -158,3 +158,7 @@ What this does and does not tell you:
   show up on harder tasks.
 - `python3 benchmarks/analyze_sessions.py` on *your own* history remains the quickest way to see whether big,
   untrimmed outputs exist in your sessions at all.
+- Follow-up checks: the same 10 tasks with Haiku (1 run each, $0.09 total) also gave **0 receipts** (77 % of its commands
+  were piped), and in the Sonnet runs tool output was only **≈ 1.3 % of the re-read context** (≈ 106k tokens per run,
+  mostly system prompt and tool definitions). So in short sessions even a perfect output reducer could save ≈ 1 %;
+  the lever, if any, is **long sessions where stale results pile up**, which a Bash hook cannot reach.

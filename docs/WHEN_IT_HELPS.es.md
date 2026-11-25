@@ -157,3 +157,8 @@ Qué dice y qué no dice esto:
   calidad solo aparecerían con tareas más difíciles.
 - `python3 benchmarks/analyze_sessions.py` sobre *tu propio* historial sigue siendo la forma más rápida de ver si en
   tus sesiones existen salidas grandes sin recortar.
+- Comprobaciones adicionales: las mismas 10 tareas con Haiku (1 ejecución cada una, $0,09 en total) también dieron
+  **0 recibos** (77 % de sus comandos llevaban pipe), y en las ejecuciones con Sonnet la salida de herramientas fue solo
+  **≈ 1,3 % del contexto releído** (≈ 106k tokens por ejecución, casi todo prompt de sistema y definiciones de
+  herramientas). Es decir, en sesiones cortas ni un reductor perfecto ahorraría más de ≈ 1 %; la palanca, si existe,
+  son las **sesiones largas donde se acumulan resultados viejos**, y un hook de Bash no llega ahí.
