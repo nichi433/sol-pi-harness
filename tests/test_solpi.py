@@ -276,6 +276,34 @@ class TestSoLPiMechanisms(unittest.TestCase):
         self.assertIn("Compaction Notice", ups["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(dispatch_hook("UserPromptSubmit", {"transcript_path": "/nonexistent"}), {})
 
+    def test_secret_redaction_covers_common_credentials_without_failing_open(self) -> None:
+        from solpi.reducer import scan_and_redact_secrets
+        secrets = ["AKIAIOSFODNN7EXAMPLE", "hunter2hunter2", "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+                   "MIIEowIBAAKCAQEA", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijk"]
+        text = (
+            "aws_access_key_id=AKIAIOSFODNN7EXAMPLE\npassword=hunter2hunter2\n" + secrets[2] + "\n"
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n"
+            "jwt " + secrets[4] + "\nsrc/auth.py:12: TypeError: token is None\n"
+        )
+        out, n = scan_and_redact_secrets(text)
+        for sec in secrets:
+            self.assertNotIn(sec, out)
+        self.assertIn("src/auth.py:12: TypeError: token is None", out)  # diagnostics untouched
+        self.assertEqual(scan_and_redact_secrets(out)[1], 0)  # idempotent: no re-trigger on redacted text
+        # end-to-end: big log with secrets is packed, reduced (not failed-open) and stored redacted
+        big = "\n".join(f"INFO {i} ok" for i in range(2000)) + "\npassword=hunter2hunter2\nERROR a/b.py:9 boom\n"
+        store = ObservationPackStore(store_dir=self.tmp_path / "secret_store")
+        res = store.pack(big, exit_code=1, command="x")
+        self.assertTrue(res.was_reduced and not res.failed_open)
+        self.assertNotIn("hunter2hunter2", (self.tmp_path / "secret_store" / f"{res.obs_id}.log").read_text())
+
+    def test_tune_is_repeatable_across_runs(self) -> None:
+        first = run_auto_research_loop(capability_floor=0.95)
+        second = run_auto_research_loop(capability_floor=0.95)
+        self.assertEqual(first["winner"], second["winner"])
+        self.assertEqual(first["candidates"], second["candidates"])
+        self.assertGreaterEqual(second["winner_evidence_recall"], 0.95)
+
     def test_hook_runner_fails_open_on_garbage_stdin(self) -> None:
         import subprocess
         proc = subprocess.run(

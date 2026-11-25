@@ -25,11 +25,22 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .config import load_config
 
 SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"(?:sk|rk|pk)_live_[A-Za-z0-9]{16,}"),
     re.compile(r"AIza[0-9A-Za-z\-_]{35}"),
-    re.compile(r"ghp_[A-Za-z0-9]{36,}"),
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}\b"),
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{50,}"),
+    re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}"),
+    re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"),  # JWT
+    # whole PEM block, not just the header line
+    re.compile(r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----(?:.*?-----END (?:[A-Z]+ )?PRIVATE KEY-----)?", re.S),
     re.compile(r"(?i)bearer\s+[A-Za-z0-9\-\._~\+\/]{24,}=*"),
+    # key=value / key: value for secret-looking names (only the value is replaced)
+    re.compile(
+        r"(?i)(?P<pre>(?:password|passwd|secret|api[_-]?key|access[_-]?key|auth[_-]?token|token)[=:]\s?)"
+        r"(?!\[REDACTED)[^\s\"',;]{8,}"
+    ),
 ]
 
 DIAGNOSTIC_REGEX = re.compile(
@@ -71,6 +82,11 @@ class VerificationResult:
     secrets_found: int = 0
 
 
+def _redact_match(m: "re.Match[str]") -> str:
+    pre = m.groupdict().get("pre")
+    return (pre or "") + "[REDACTED_SECRET]"
+
+
 def scan_and_redact_secrets(text: str) -> Tuple[str, int]:
     """Scan for potential secrets/credentials and redact them."""
     count = 0
@@ -79,7 +95,7 @@ def scan_and_redact_secrets(text: str) -> Tuple[str, int]:
         matches = pat.findall(redacted)
         if matches:
             count += len(matches)
-            redacted = pat.sub("[REDACTED_SECRET]", redacted)
+            redacted = pat.sub(_redact_match, redacted)
     return redacted, count
 
 

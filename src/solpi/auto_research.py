@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -129,13 +131,17 @@ def run_auto_research_loop(
     ]
 
     evaluations: List[CandidateEvaluation] = []
+    # Fresh isolated store per run: a persistent dir makes repeated runs hit the dedup path
+    # (identical logs, seen_count > grace_turns) and silently skew recall/reduction.
+    owns_store = temp_store_dir is None
+    work_root = Path(tempfile.mkdtemp(prefix="solpi_tune_")) if owns_store else Path(temp_store_dir)
 
     for idx, cand in enumerate(candidates):
         cfg = copy.deepcopy(base_cfg)
         for section, vals in cand["patch"].items():
             cfg.setdefault(section, {}).update(vals)
 
-        store_sub = (temp_store_dir or Path("/tmp/solpi_tune")) / f"cand_{idx}"
+        store_sub = work_root / f"cand_{idx}"
         store_sub.mkdir(parents=True, exist_ok=True)
         store = ObservationPackStore(config=cfg, store_dir=store_sub)
 
@@ -164,6 +170,9 @@ def run_auto_research_loop(
                 reduction_percent=reduction_pct,
             )
         )
+
+    if owns_store:
+        shutil.rmtree(work_root, ignore_errors=True)
 
     # Filter & Compose phase: pick candidate with highest reduction_percent among those passing capability_floor
     surviving = [ev for ev in evaluations if ev.passed_capability_floor]
