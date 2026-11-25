@@ -73,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
     # 5. tune
     p_tune = sub.add_parser("tune", help="Run the SoL-Pi / Harness2 Auto-Research RSI loop")
     p_tune.add_argument("--floor", type=float, default=0.95, help="Capability floor for evidence recall (default: 0.95)")
+    p_tune.add_argument("--real", action="store_true", help="Also validate on REAL tool runs (gcc, g++, cargo, python, node) when installed")
+    p_tune.add_argument("--quick", action="store_true", help="Smaller candidate grid (8 instead of 36)")
+    p_tune.add_argument("--seed", type=int, default=1337, help="Corpus seed (default: 1337)")
+    p_tune.add_argument("--verbose", action="store_true", help="Include every candidate in the printed report")
     p_tune.add_argument("--write-config", help="Optional path to save winning sol-pi.json")
 
     # 6. stats
@@ -175,11 +179,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     elif args.subcommand == "tune":
-        report = run_auto_research_loop(capability_floor=args.floor, base_config=cfg)
+        report = run_auto_research_loop(
+            capability_floor=args.floor, base_config=cfg, include_real=args.real, seed=args.seed, quick=args.quick
+        )
         if args.write_config:
             out_path = Path(args.write_config).expanduser().resolve()
             out_path.write_text(json.dumps(report["recommended_config"], indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(report, indent=2))
+        shown = report if args.verbose else {k: v for k, v in report.items() if k not in ("candidates", "recommended_config")}
+        if not args.verbose:
+            shown["candidates_passed_floor"] = f"{sum(c['passed_floor'] for c in report['candidates'])}/{len(report['candidates'])}"
+        print(json.dumps(shown, indent=2))
         return 0
 
     elif args.subcommand == "stats":

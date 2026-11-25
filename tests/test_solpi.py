@@ -199,14 +199,47 @@ class TestSoLPiMechanisms(unittest.TestCase):
         self.assertIn("src/db/migrate.py", d_high.checkpoint_markdown)
 
     def test_mechanism_5_auto_research_rsi_loop(self) -> None:
-        report = run_auto_research_loop(
-            capability_floor=0.95,
-            temp_store_dir=self.tmp_path / "tune_work",
-        )
-        self.assertIn("winner", report)
+        report = run_auto_research_loop(capability_floor=0.95, temp_store_dir=self.tmp_path / "tune_work", quick=True)
         self.assertGreaterEqual(report["winner_evidence_recall"], 0.95)
         self.assertGreater(report["winner_reduction_percent"], 50.0)
-        self.assertEqual(len(report["candidates"]), 4)
+        self.assertTrue(report["validated_on_holdout"])
+        self.assertGreaterEqual(report["selected_holdout"]["recall"], 0.95)
+        self.assertGreaterEqual(report["selected_holdout"]["worst_family"], 0.85)
+        self.assertEqual(len(report["candidates"]), 8)
+        # holdout families are never part of the selection corpus
+        self.assertGreater(report["corpus"]["holdout_cases"], 0)
+        # the tuner must actually discriminate: aggressive settings lose evidence and are rejected
+        self.assertTrue(any(not c["passed_floor"] for c in report["candidates"]))
+        rej = [c for c in report["candidates"] if "q15_r0" in c["name"]]
+        self.assertTrue(rej and all(not c["passed_floor"] for c in rej))
+
+    def test_tune_corpus_is_diverse_and_deterministic(self) -> None:
+        from solpi.tune_corpus import generate_corpus, TRAIN_FAMILIES, HOLDOUT_FAMILIES
+        a, b = generate_corpus(seed=5), generate_corpus(seed=5)
+        self.assertEqual([c["log"] for c in a], [c["log"] for c in b])
+        self.assertGreaterEqual(len({c["family"] for c in a}), 16)
+        self.assertTrue(set(TRAIN_FAMILIES).isdisjoint(HOLDOUT_FAMILIES))
+        for c in a:
+            self.assertTrue(c["truth"], c["id"])
+            for t in c["truth"]:
+                self.assertIn(t.strip(), c["log"], c["id"])  # ground truth really is in the raw log
+
+    def test_reducer_keeps_every_failure_when_context_would_exhaust_budget(self) -> None:
+        # 8 failures x (core + 2 context lines each side) > 35 quotes: core lines must win over context
+        noise = [f"test_ok_{i} ... ok" for i in range(600)]
+        log, truth = list(noise), []
+        for k in range(8):
+            blk = ["=" * 30, f"FAIL: test_bad_{k}", f'  File "t.py", line {k + 10}, in test_bad_{k}', f"AssertionError: {k} != {k + 1}", "-" * 30]
+            log[50 + k * 60:50 + k * 60] = blk
+            truth.append(f"AssertionError: {k} != {k + 1}")
+        store = ObservationPackStore(store_dir=self.tmp_path / "budget_store")
+        out = store.pack("\n".join(log), exit_code=1, command="python3 -m unittest -v").formatted_output
+        for t in truth:
+            self.assertIn(t, out)
+        # failures that use none of the usual keywords are still kept
+        silent = "\n".join([f"step {i} ok" for i in range(800)] + ["timed out after 300 seconds waiting for lock"])
+        out = store.pack(silent, exit_code=2, command="make test").formatted_output
+        self.assertIn("timed out after 300 seconds waiting for lock", out)
 
     def test_mcp_jsonrpc_server(self) -> None:
         # 1. initialize
@@ -348,8 +381,8 @@ class TestSoLPiMechanisms(unittest.TestCase):
         self.assertGreaterEqual(rep["summary"]["reduction_pct"], 80)
 
     def test_tune_is_repeatable_across_runs(self) -> None:
-        first = run_auto_research_loop(capability_floor=0.95)
-        second = run_auto_research_loop(capability_floor=0.95)
+        first = run_auto_research_loop(capability_floor=0.95, quick=True)
+        second = run_auto_research_loop(capability_floor=0.95, quick=True)
         self.assertEqual(first["winner"], second["winner"])
         self.assertEqual(first["candidates"], second["candidates"])
         self.assertGreaterEqual(second["winner_evidence_recall"], 0.95)

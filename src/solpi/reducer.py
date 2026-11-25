@@ -46,7 +46,11 @@ SECRET_PATTERNS = [
 DIAGNOSTIC_REGEX = re.compile(
     r"(?:error|fail|failed|failure|exception|traceback|fatal|panic|assert|AssertionError|"
     r"SyntaxError|TypeError|ValueError|KeyError|ImportError|ModuleNotFoundError|"
-    r"ConnectionRefusedError|segfault|undefined reference|cannot find|ERR!)",
+    r"ConnectionRefusedError|segfault|undefined reference|cannot find|ERR!|"
+    # failures that use none of the usual words
+    r"segmentation fault|core dumped|\bkilled\b|oomkilled|\boom\b|out of memory|timed out|time-?out|"
+    r"permission denied|no such file|not found|cannot |can't |unable to|\bdenied\b|refused|aborted|"
+    r"exit(?:ed)? (?:with )?(?:status|code) [1-9]|non-zero|\bERROR\b)",
     re.IGNORECASE,
 )
 
@@ -200,21 +204,21 @@ def build_deterministic_receipt(
             if len(locations) >= 15:
                 break
 
-    # Find diagnostic lines with context radius
-    matched_indices: List[int] = []
-    seen_idx = set()
-    for idx, line in enumerate(lines):
-        if DIAGNOSTIC_REGEX.search(line):
-            start = max(0, idx - context_radius)
-            end = min(len(lines), idx + context_radius + 1)
-            for c_idx in range(start, end):
-                if c_idx not in seen_idx and lines[c_idx].strip():
-                    seen_idx.add(c_idx)
-                    matched_indices.append(c_idx)
-
-    verbatim_quotes: List[str] = []
-    for idx in matched_indices[:max_quotes]:
-        verbatim_quotes.append(lines[idx])
+    # Diagnostic (core) lines first; context lines only fill what is left of the quote budget, closest first.
+    # Without this priority, the context of the first failures exhausts the budget and later failures vanish.
+    core = [i for i, ln in enumerate(lines) if ln.strip() and DIAGNOSTIC_REGEX.search(ln)]
+    if len(core) > max_quotes:
+        head_n = -(-2 * max_quotes // 3)  # keep the first 2/3 (root causes) and the last 1/3 (summaries)
+        core = core[:head_n] + core[len(core) - (max_quotes - head_n):]
+    chosen = set(core)
+    for dist in range(1, context_radius + 1):
+        for idx in core:
+            for c_idx in (idx - dist, idx + dist):
+                if len(chosen) >= max_quotes:
+                    break
+                if 0 <= c_idx < len(lines) and lines[c_idx].strip():
+                    chosen.add(c_idx)
+    verbatim_quotes: List[str] = [lines[i] for i in sorted(chosen)]
 
     # Fallback if no diagnostic keyword matched (e.g. successful long test output)
     if not verbatim_quotes and lines:

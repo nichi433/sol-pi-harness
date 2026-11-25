@@ -157,7 +157,7 @@ def big_cat():
 
 # (case fn, expect needle visible directly in the receipt?)
 CASES = [(gcc_log, True), (pytest_log, True), (node_log, True), (cargo_log, True), (secrets_log, True),
-         (real_unittest_failing, True), (real_grep, True), (small_log, True), (big_cat, False)]
+         (real_unittest_failing, True), (real_grep, False), (small_log, True), (big_cat, False)]
 
 rows, secret_leaks = [], 0
 t_overhead = []

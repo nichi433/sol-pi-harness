@@ -9,7 +9,7 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Bucle_Recursivo-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Cero Dependencias](https://img.shields.io/badge/Dependencias-Cero_(Python_Puro)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests OK](https://img.shields.io/badge/Tests-18%2F18_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests OK](https://img.shields.io/badge/Tests-20%2F20_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Aprobado por Nichis](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
 *¡No dejes que tu agente de programación se vuelva un michi gordito lleno de bolas de pelos de logs (`4.8M tokens`)! Mantenlo ágil como un **Nichi** (`-92%` en logs de build/test en nuestro [benchmark](#-benchmark-reproducible), `100% de evidencia recuperable`, cero alucinaciones) 🐾✨*
@@ -130,8 +130,10 @@ Cuando $\Delta \text{Ahorro} > 0$ o la presión de ventana supera el `65%`, gene
 
 ### 5️⃣ Bucle de Auto-Investigación RSI (`solpi_tune` / `solpi tune`) — *Nichi Auto-Mejorante* 🧬
 Implementa el ciclo **Propose $\rightarrow$ Probe $\rightarrow$ Filter $\rightarrow$ Compose** de **SoL-Pi** y **Harness²**:
-- Prueba configuraciones candidatas sobre logs diagnósticos reales.
-- Exige un **Piso de Capacidad (Capability Floor)** ($\ge 95\%$ de retención de ubicaciones de error) y elige la configuración Pareto-óptima (¡logrando **88.92% de reducción de bytes** con **1.00 de recall** en nuestro corpus multi-lenguaje!).
+- Evalúa una grilla de 36 candidatas sobre un **corpus diverso**: 16 familias de logs × 4 variantes (pytest, unittest, gcc/g++, tsc, cargo, jest, go, maven, npm, linker, mypy, fallos sin palabras clave…) más **ejecuciones reales** opcionales (`--real`: gcc, g++, cargo, python, node). Cada log tiene líneas de error de verdad conocida; recall = proporción de ellas visibles literalmente en el recibo.
+- **Anti-sobreajuste**: el split es *por familia*. Las candidatas se eligen solo con las familias TRAIN; las familias HOLDOUT y los logs reales solo *validan* a la ganadora. El piso aplica al promedio macro **y a cada familia por separado** (por defecto ≥ 95 % / ≥ 85 %). Si la ganadora falla en holdout, se recomienda la configuración por defecto (`validated_on_holdout: false`).
+- Discrimina: solo **8 de 36** candidatas pasan (el estilo "ultra" `q15/r0` pierde hasta 45 % de la evidencia de una familia). La ganadora `head 4 / tail 5, 35 citas, radio 2` → recall **1,00** en train y holdout, **90 %** de reducción frente a 86 % del extracto `15/20` anterior; ahora es el valor por defecto.
+- `solpi tune [--real] [--quick] [--seed N] [--verbose] [--write-config sol-pi.json]`.
 
 ---
 
@@ -231,10 +233,10 @@ python3 benchmarks/run_benchmark.py --config winner.json   # compara el resultad
 
 Usa su propio corpus (gcc, pytest, jest, cargo, un log con secretos, un `unittest -v` real con fallos inyectados, un `grep` real y una lectura de archivo de 40 KiB) con **líneas de error plantadas como verdad**, y mide reducción, evidencia *visible directamente* en el recibo, evidencia *recuperable* por el handle y un baseline ingenuo `tail -n 40`. Ejecución de referencia:
 
-| Métrica (7 logs de build/test ≥ 4 KiB) | Resultado |
+| Métrica (6 logs de build/test ≥ 4 KiB) | Resultado |
 | :--- | :---: |
-| Tokens estimados de salida de herramientas | 87.769 → 7.143 (**−91,9 %**) |
-| Errores plantados visibles en el recibo | **22/22** (`tail -n 40` ingenuo: 7/22) |
+| Tokens estimados de salida de herramientas | 85.597 → 3.063 (**−96,4 %**) |
+| Errores plantados visibles en el recibo | **21/21** (`tail -n 40` ingenuo: 7/21) |
 | Errores plantados recuperables con `read_obs` (los 9 casos) | **24/24** |
 | Secretos filtrados (recibo o log guardado) / fail-opens | **0 / 0** |
 | Hook: comandos simples envueltos / comandos riesgosos envueltos | 8/8 / 0/10 |
@@ -252,7 +254,7 @@ Usa su propio corpus (gcc, pytest, jest, cargo, un log con secretos, un `unittes
 | **ObservationPack**: archiva resultados > 10 KiB, los envía completos 2 solicitudes y luego handle + extracto de ~1 KB | Archivo + handle + head/tail + recall paginado + dedup; umbral de 10 KiB para salida que no es build | Un wrapper externo no puede reescribir resultados previos, así que la ventana de gracia de "completo las 2 primeras solicitudes" **no** está implementada (`grace_turns` solo gobierna la dedup de salida *idéntica* repetida). Los resultados grandes se empaquetan de inmediato. |
 | **Evidence-Preserving Reducer**: logs de build/test ≥ 4 KiB de un conjunto predefinido de comandos; lecturas/búsquedas lo evitan; un LLM barato extrae el recibo; verificador determinista (esquema, hash, exit, citas exactas, tamaño); fallback al original | Misma selección de comandos (`extra_command_regex` para ampliarla), mismo verificador y fail-open; extractor determinista por defecto, LLM opcional (`GEMINI_API_KEY`) | Ante credenciales sospechosas se **redactan** y se usa el recibo, mientras que el paper vuelve al log original. |
 
-## 🧪 Ejecutar las 18 Pruebas Automatizadas
+## 🧪 Ejecutar las 20 Pruebas Automatizadas
 
 ```bash
 python3 -m unittest discover -s tests -v
