@@ -445,12 +445,44 @@ class TestSoLPiMechanisms(unittest.TestCase):
         sc = res["scenarios"]
         self.assertEqual(sc["hook_only"]["results"], 1)      # only the simple `pytest -q`
         self.assertEqual(sc["reducible"]["results"], 2)      # + `cd x && pytest`
-        self.assertEqual(sc["all_big"]["results"], 3)        # + `cat`
+        self.assertEqual(sc["all_big_bash"]["results"], 3)   # + `cat`
         # 10,000 tok * 0.9 * 89 later requests = 0.801 Mtok saved by the hook alone
         self.assertAlmostEqual(sc["hook_only"]["saved_mtok"], 0.8, delta=0.02)
-        self.assertGreater(sc["all_big"]["saved_mtok"], sc["reducible"]["saved_mtok"])
+        self.assertGreater(sc["all_big_bash"]["saved_mtok"], sc["reducible"]["saved_mtok"])
         # fixed overhead is charged on every request of every session (150 x 735 tokens)
         self.assertAlmostEqual(res["fixed_overhead_mtok"], 0.11, delta=0.01)
+
+    def test_session_analyzer_models_compaction_other_tools_and_sidechains(self) -> None:
+        import subprocess
+        d = self.tmp_path / "transcripts2"
+        d.mkdir()
+        lines = []
+
+        def req(i, cache, tool=None, size=0, side=False):
+            blocks = [{"type": "tool_use", "id": f"t{i}", "name": tool, "input": {"command": "cat f"}}] if tool else []
+            lines.append({"type": "assistant", "isSidechain": side, "message": {
+                "id": f"m{i}{'s' if side else ''}", "content": blocks, "usage": {"cache_read_input_tokens": cache}}})
+            if tool:
+                lines.append({"type": "user", "isSidechain": side, "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": f"t{i}", "content": [{"type": "text", "text": "y" * size}]}]}})
+
+        # 40 requests. A 40,000-char Read result at request 4; context drops by half at request 20 (compaction).
+        for i in range(40):
+            req(i, 30_000 if i < 20 else 12_000, tool="Read" if i == 4 else None, size=40_000)
+        req(99, 80_000, tool="Grep", size=60_000, side=True)   # sub-agent: must be ignored
+        (d / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
+        script = Path(__file__).resolve().parent.parent / "benchmarks" / "analyze_sessions.py"
+        res = json.loads(subprocess.run([sys.executable, str(script), str(d), "--json"], capture_output=True, text=True).stdout)
+        self.assertEqual(res["requests"], 40)
+        self.assertEqual(res["sidechain_requests_skipped"], 1)
+        self.assertEqual(res["compaction_boundaries_detected"], 1)
+        any_big = res["scenarios"]["all_big_any"]
+        self.assertEqual(any_big["results"], 1)                       # the Read; the Grep was a sub-agent
+        self.assertEqual(res["scenarios"]["all_big_bash"]["results"], 0)  # Read is not Bash
+        self.assertEqual(list(res["all_big_any_by_tool"]), ["Read"])
+        # 10,000 tok * 0.9: re-read 16 requests until the compaction at 20, vs 35 if compaction were ignored
+        self.assertAlmostEqual(any_big["saved_mtok"], 10_000 * 0.9 * 16 / 1e6, places=2)
+        self.assertGreater(any_big["pct_of_cache_read_if_no_compaction"], any_big["pct_of_cache_read"] * 2)
 
     def test_tune_is_repeatable_across_runs(self) -> None:
         first = run_auto_research_loop(capability_floor=0.95, quick=True)

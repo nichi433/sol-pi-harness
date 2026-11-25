@@ -90,9 +90,12 @@ Por herramienta:
    ```bash
    python3 benchmarks/analyze_sessions.py            # ~/.claude/projects
    ```
-   Informa cuántos resultados de Bash son grandes, qué cubre hoy el hook frente a una regla más laxa, los tokens
-   de lectura de caché ahorrados estimados y el **neto tras el costo fijo de las herramientas**. Es una *cota
-   superior* (ignora autocompactación, turnos de recuperación y calidad).
+   Informa, como porcentaje de tus tokens de lectura de caché: lo que cubre el hook de build/test (`hook_only`,
+   `hook_prefixed`, `reducible`), lo que cubriría archivar cualquier resultado grande de Bash (`all_big_bash`) y el
+   caso más amplio con todas las herramientas, incl. `Read`/`Grep` (`all_big_any`, con desglose por herramienta),
+   cada uno con el **neto tras el costo fijo**. El ahorro se corta en la siguiente compactación detectada (una caída
+   brusca de cache-read); al lado se imprime la cifra sin compactación. Sigue siendo una *cota superior*: sin turnos
+   de recuperación, sin cambio de calidad, y Claude Code además limpia resultados viejos por su cuenta.
 2. **A/B con tareas reales** (la única forma de ver calidad y turnos extra): elige ~10 tareas representativas,
    ejecuta cada una dos veces (toolkit activado/desactivado, mismo modelo, sesiones nuevas) y compara costo total
    (`/cost`), número de solicitudes y si la tarea pasó. Según el paper, espera *menor costo y quizá una tasa de

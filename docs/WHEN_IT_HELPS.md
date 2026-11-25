@@ -90,9 +90,12 @@ Per harness:
    ```bash
    python3 benchmarks/analyze_sessions.py            # ~/.claude/projects
    ```
-   It reports how many Bash results are big, what the hook covers today vs a looser rule, estimated saved
-   cache-read tokens, and the **net after the tool overhead**. It is an *upper bound* (ignores auto-compaction,
-   recall turns and quality).
+   It reports, as a share of your cache-read tokens: what the build/test hook covers (`hook_only`,
+   `hook_prefixed`, `reducible`), what a generic archive of any big Bash result would cover (`all_big_bash`), and
+   the broadest case across all tools incl. `Read`/`Grep` (`all_big_any`, with a per-tool breakdown), each with the
+   **net after the tool overhead**. Savings stop at the next detected compaction (a sharp cache-read drop); the
+   no-compaction figure is printed next to it. Still an *upper bound*: no recall turns, no quality change, and
+   Claude Code also clears old tool results on its own.
 2. **A/B on real tasks** (the only way to see quality and extra turns): pick ~10 representative tasks, run each
    twice (toolkit on/off, same model, fresh sessions), and compare total cost (`/cost`), number of requests,
    and whether the task passed. Per the paper, expect a *lower cost and possibly a slightly lower pass rate*; if
