@@ -1,0 +1,37 @@
+{
+  "action_fusion": {
+    "enabled": true,
+    "default_timeout_sec": 120,
+    "syntax_precheck": true,
+    "revert_on_syntax_error": true
+  },
+  "observation_pack": {
+    "enabled": true,
+    "threshold_bytes": 10240,
+    "grace_turns": 2,
+    "head_lines": 15,
+    "tail_lines": 20,
+    "page_size_lines": 80,
+    "store_dir": "~/.cache/sol-pi/obs"
+  },
+  "evidence_reducer": {
+    "enabled": true,
+    "threshold_bytes": 4096,
+    "mode": "hybrid",
+    "delegate_model": "gemini-2.5-flash",
+    "max_verbatim_quotes": 35,
+    "context_radius_lines": 2,
+    "strict_verbatim_check": true,
+    "redact_secrets": true,
+    "max_compression_ratio": 0.85
+  },
+  "online_compaction": {
+    "enabled": true,
+    "window_limit_tokens": 200000,
+    "pressure_ratio_trigger": 0.65,
+    "min_expected_turns_remaining": 4,
+    "cached_read_cost_per_mtok": 0.30,
+    "cache_write_cost_per_mtok": 3.75,
+    "uncompressed_input_cost_per_mtok": 3.00
+  }
+}

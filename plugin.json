@@ -1,0 +1,12 @@
+{
+  "name": "sol-pi-harness",
+  "author": {
+    "name": "SoL-Pi Open Source Contributors",
+    "url": "https://arxiv.org/abs/2609.20519"
+  },
+  "homepage": "https://github.com/sol-pi/sol-pi-harness",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sol-pi/sol-pi-harness.git"
+  }
+}

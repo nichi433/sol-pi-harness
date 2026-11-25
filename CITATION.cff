@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+message: "If you use this software or the SoL-Pi / Harness2 mechanisms, please cite the foundational research papers below."
+title: "sol-pi-harness: Multi-Harness Token Efficiency Toolkit"
+version: 0.1.0
+date-released: 2026-11-24
+license: MIT
+repository-code: "https://github.com/sol-pi/sol-pi-harness"
+references:
+  - type: article
+    title: "SoL-Pi: Recursively Scaling Auto-Research Loops for Efficient Agent Harness"
+    authors:
+      - family-names: "Liu"
+        given-names: "Haozhe"
+      - family-names: "Ye"
+        given-names: "Tian"
+      - family-names: "Gao"
+        given-names: "Sensen"
+      - family-names: "Cao"
+        given-names: "Qihang"
+      - family-names: "Li"
+        given-names: "Yitong"
+      - family-names: "Zhuge"
+        given-names: "Mingchen"
+      - family-names: "Wang"
+        given-names: "Duomin"
+      - family-names: "Zhang"
+        given-names: "Ruihua"
+      - family-names: "Luo"
+        given-names: "Ping"
+      - family-names: "Bian"
+        given-names: "Jiawang"
+      - family-names: "Zhu"
+        given-names: "Lei"
+      - family-names: "Zhu"
+        given-names: "Ligeng"
+      - family-names: "Xie"
+        given-names: "Enze"
+      - family-names: "Han"
+        given-names: "Song"
+    year: 2026
+    month: 9
+    journal: "arXiv preprint arXiv:2609.20519"
+    url: "https://arxiv.org/abs/2609.20519"
+  - type: software
+    title: "Harness2: Recursive Agent Harnessing in Open-World Environments"
+    authors:
+      - name: "Google Research & Northwestern University"
+    year: 2026
+    url: "https://github.com/google-research/harness2"

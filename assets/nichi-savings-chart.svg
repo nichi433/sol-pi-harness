@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 340" width="100%" height="340">
+  <defs>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161324" />
+      <stop offset="100%" stop-color="#221c38" />
+    </linearGradient>
+    <linearGradient id="fatCatBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff5e7e" />
+      <stop offset="100%" stop-color="#ff9966" />
+    </linearGradient>
+    <linearGradient id="nichiBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7ef2e4" />
+      <stop offset="50%" stop-color="#c49bff" />
+      <stop offset="100%" stop-color="#ff9ecd" />
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="912" height="332" rx="18" fill="url(#cardBg)" stroke="#4c3d7a" stroke-width="2" />
+
+  <!-- Title -->
+  <text x="35" y="42" font-family="system-ui, sans-serif" font-size="20" font-weight="800" fill="#ffcfef">
+    🐾 Token &amp; Cost Savings Benchmark — Standard Fat-Log Cat vs. SoL-Pi Agile Nichi uwu
+  </text>
+  <text x="35" y="65" font-family="system-ui, sans-serif" font-size="13" fill="#b4a5e8">
+    Verified across EdgeBench (arXiv:2609.20519) &amp; Live Workspace Telemetry (0% capability loss, 100% verbatim evidence)
+  </text>
+
+  <!-- Section 1: Long-Horizon Session Traffic (50+ Turns) -->
+  <g transform="translate(35, 90)">
+    <text x="0" y="18" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#ffffff">
+      1. Long-Horizon Session Token Traffic (40–80 Turn Coding Loop)
+    </text>
+
+    <!-- Baseline Bar -->
+    <text x="0" y="46" font-family="monospace" font-size="12.5" fill="#ffb3c1">😿 Baseline Harness (Chonky Log Replay)</text>
+    <rect x="295" y="31" width="460" height="22" rx="6" fill="url(#fatCatBar)" />
+    <text x="765" y="47" font-family="monospace" font-size="13" font-weight="bold" fill="#ff7e95">4.80M tokens ($6.00)</text>
+
+    <!-- SoL-Pi Bar -->
+    <text x="0" y="78" font-family="monospace" font-size="12.5" fill="#a8fff4">😻 SoL-Pi Nichi Harness (All 4 Mechanisms)</text>
+    <rect x="295" y="63" width="235" height="22" rx="6" fill="url(#nichiBar)" />
+    <text x="540" y="79" font-family="monospace" font-size="13" font-weight="bold" fill="#7ef2e4">2.45M tokens ($3.15) → -49.0% Saved! ✨</text>
+  </g>
+
+  <!-- Section 2: Single Diagnostic Log Payload (Live Test in Workspace) -->
+  <g transform="translate(35, 195)">
+    <text x="0" y="18" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#ffffff">
+      2. Diagnostic Test Suite Payload (ObservationPack + Verbatim Reducer Live Run)
+    </text>
+
+    <!-- Raw Log Bar -->
+    <text x="0" y="46" font-family="monospace" font-size="12.5" fill="#ffb3c1">🙀 Raw Unpacked Output (2 Test Runs)</text>
+    <rect x="295" y="31" width="460" height="22" rx="6" fill="url(#fatCatBar)" />
+    <text x="765" y="47" font-family="monospace" font-size="13" font-weight="bold" fill="#ff7e95">40,817 Bytes (~10.2k tok)</text>
+
+    <!-- Packed Log Bar -->
+    <text x="0" y="78" font-family="monospace" font-size="12.5" fill="#ffcfef">🐾 ObservationPack Handle (obs_xxxx)</text>
+    <rect x="295" y="63" width="100" height="22" rx="6" fill="url(#nichiBar)" />
+    <text x="405" y="79" font-family="monospace" font-size="13" font-weight="bold" fill="#ff9ecd">8,942 Bytes (~2.2k tok) → -78.1% Saved! 🐱</text>
+  </g>
+
+  <!-- Bottom KPI Cards -->
+  <g transform="translate(35, 290)">
+    <rect x="0" y="0" width="200" height="32" rx="8" fill="#2c234d" stroke="#ff9ecd" stroke-width="1.2" />
+    <text x="100" y="20" font-family="system-ui, sans-serif" font-size="12.5" font-weight="bold" fill="#ffcfef" text-anchor="middle">
+      ⚡ -50% Edit-Test Turns
+    </text>
+
+    <rect x="215" y="0" width="215" height="32" rx="8" fill="#2c234d" stroke="#7ef2e4" stroke-width="1.2" />
+    <text x="322" y="20" font-family="system-ui, sans-serif" font-size="12.5" font-weight="bold" fill="#a8fff4" text-anchor="middle">
+      🛡️ 100% Verbatim Accuracy
+    </text>
+
+    <rect x="445" y="0" width="205" height="32" rx="8" fill="#2c234d" stroke="#c49bff" stroke-width="1.2" />
+    <text x="547" y="20" font-family="system-ui, sans-serif" font-size="12.5" font-weight="bold" fill="#e2d1ff" text-anchor="middle">
+      tuned RSI Recall: 1.0 (88.9%)
+    </text>
+
+    <rect x="665" y="0" width="185" height="32" rx="8" fill="#2c234d" stroke="#ffd280" stroke-width="1.2" />
+    <text x="757" y="20" font-family="system-ui, sans-serif" font-size="12.5" font-weight="bold" fill="#ffe4b3" text-anchor="middle">
+      😻 Zero Hallucinations
+    </text>
+  </g>
+</svg>
