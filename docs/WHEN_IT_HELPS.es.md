@@ -1,6 +1,6 @@
 # ¿Me sirve en mis sesiones de Claude Code / Codex / OpenCode?
 
-Respuesta corta: **a veces, de forma modesta y no gratis.** Vale la pena si tus sesiones ejecutan una y otra vez
+Respuesta corta: **a veces, de forma modesta y no gratis**, y en un A/B con tareas cortas de Claude Code *no hizo nada* (§7). Vale la pena si tus sesiones ejecutan una y otra vez
 builds/tests que imprimen más de unos pocos KB. Es una pérdida neta (pequeña) si no. Aquí se explica cómo saberlo,
 con los números que tenemos y los que no.
 
@@ -125,3 +125,35 @@ del timeout propio del Bash del harness) para que un build largo no muera a los 
 - Nuestro corpus y algunas correcciones del reducer se desarrollaron juntos; solo las ejecuciones reales de
   gcc/g++/Python son datos reservados limpios (todas conservaron el 100 % de la evidencia).
 - Ninguna afirmación cubre salida de herramientas no inglesa, rutas de Windows ni toolchains muy exóticos.
+
+## 7. Resultado del A/B: el mismo agente con y sin el toolkit (medido)
+
+`python3 benchmarks/ab/run_ab.py --out ab_results --reps 3` (código y datos crudos en `benchmarks/ab/`). Claude Code
+2.1 + Sonnet 5.5, 10 tareas pequeñas que escribí yo (6 donde la salida de tests/build pesa 8–50 KB y 4 de control
+con salida mínima), cada una 3 veces por condición = 60 ejecuciones reales, gasto total de API **$2,55**. La
+condición B es `solpi install --hook-only` (modo `prefixed`); ninguna carga ajustes de usuario, skills ni otros MCP.
+
+| | A (sin nada) | B (hook-only) |
+| :--- | :---: | :---: |
+| Tareas resueltas | **30/30** | **30/30** |
+| Costo total | $0,42 | $0,43 (**+3,3 %**, ruido) |
+| Tareas con salida grande, media geométrica de costo B/A | | **1,08** (por tarea 0,92 … 1,42) |
+| Tareas de control, media geométrica de costo B/A | | **0,94** |
+| Recibos generados / llamadas de recuperación | – | **0 / 0** |
+| Comandos Bash con pipe a `tail`/`head`/`grep` | **85 %** | **79 %** |
+
+**El toolkit no hizo nada en estas sesiones**: ni daño ni ahorro. El hook nunca se activó (0 recibos en 30
+ejecuciones) porque el agente *ya recorta su propia salida*: 4 de cada 5 comandos eran
+`python3 -m unittest -v 2>&1 | tail -30` o `make 2>&1 | head -50`, y el hook, por diseño, nunca reescribe comandos con
+pipe. Las diferencias de costo son ruido entre ejecuciones (desviación estándar de una sola ejecución ≈ 28 %); ninguna
+tarea cambió su resultado.
+
+Qué dice y qué no dice esto:
+- **Sí** muestra que en sesiones cortas de Claude Code con un modelo actual el ahorro es ≈ 0, lo contrario de los
+  escenarios optimistas del §3, que suponen que las salidas grandes sin recortar llegan de verdad al contexto.
+- **No** cubre sesiones largas (estas duraron 3–9 turnos, ≈ $0,04 cada una), otros agentes (Codex/GPT puede no recortar
+  igual) ni tareas donde el agente necesita el log *completo*. Ahí está el origen de las ganancias del paper y no se probó.
+- Todas las tareas tienen solución y se resolvieron en ambas condiciones (efecto techo), así que las diferencias de
+  calidad solo aparecerían con tareas más difíciles.
+- `python3 benchmarks/analyze_sessions.py` sobre *tu propio* historial sigue siendo la forma más rápida de ver si en
+  tus sesiones existen salidas grandes sin recortar.

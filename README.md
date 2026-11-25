@@ -139,7 +139,7 @@ Implements the **Propose $\rightarrow$ Probe $\rightarrow$ Filter $\rightarrow$ 
 
 ## ❓ Will it help in my sessions?
 
-Honest answer in [docs/WHEN_IT_HELPS.md](./docs/WHEN_IT_HELPS.md): it helps sessions that repeatedly run builds/tests printing > 4 KB; it is a small net cost otherwise, the paper's own full stack scores ~3–6 % below baseline, and this external MCP/hook port cannot reproduce the paper's numbers. Check your own history with `python3 benchmarks/analyze_sessions.py`.
+Honest answer in [docs/WHEN_IT_HELPS.md](./docs/WHEN_IT_HELPS.md): it helps sessions that repeatedly run builds/tests printing > 4 KB; it is a small net cost otherwise, the paper's own full stack scores ~3–6 % below baseline, and this external MCP/hook port cannot reproduce the paper's numbers. A real A/B (60 Claude Code runs, 10 tasks) showed **no effect** on short sessions: the agent already trims its own output, so the hook never fired. Check your own history with `python3 benchmarks/analyze_sessions.py`.
 
 ## 🚀 10-Second Quickstart
 

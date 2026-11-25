@@ -1,6 +1,6 @@
 # Will this help in my Claude Code / Codex / OpenCode sessions?
 
-Short answer: **sometimes, modestly, and not for free.** It is worth installing if your sessions repeatedly run
+Short answer: **sometimes, modestly, and not for free** — and in an A/B on short Claude Code tasks it did *nothing* (§7). It is worth installing if your sessions repeatedly run
 builds/tests that print more than a few KB. It is a net loss (small, but a loss) if they do not. This page says
 how to tell, with the numbers we have and the ones we do not.
 
@@ -125,3 +125,36 @@ Bash timeout) so long builds are not killed at `solpi run`'s 120 s default.
 - Our corpus and some reducer fixes were developed together; only the real gcc/g++/Python runs are clean
   held-out data (all kept 100 % of evidence).
 - No claim here covers non-English tool output, Windows paths, or very exotic toolchains.
+
+## 7. A/B result: the same agent with and without the toolkit (measured)
+
+`python3 benchmarks/ab/run_ab.py --out ab_results --reps 3` (code and raw data in `benchmarks/ab/`). Claude Code
+2.1 + Sonnet 5.5, 10 small tasks I wrote (6 where the test/build output is 8–50 KB, 4 controls with tiny output),
+each run 3× per condition = 60 real runs, total API spend **$2.55**. Condition B is `solpi install --hook-only`
+(hook mode `prefixed`); both conditions load no user settings, skills or other MCP servers.
+
+| | A (plain) | B (hook-only) |
+| :--- | :---: | :---: |
+| Tasks solved | **30/30** | **30/30** |
+| Total cost | $0.42 | $0.43 (**+3.3 %**, noise) |
+| Noisy tasks, geometric-mean cost B/A | | **1.08** (per task 0.92 … 1.42) |
+| Control tasks, geometric-mean cost B/A | | **0.94** |
+| Receipts produced / recall calls | – | **0 / 0** |
+| Bash commands piped to `tail`/`head`/`grep` | **85 %** | **79 %** |
+
+**The toolkit did nothing in these sessions** — not harm, not savings. The hook never fired (0 receipts in 30 runs)
+because the agent *already trims its own output*: 4 out of 5 of its commands were
+`python3 -m unittest -v 2>&1 | tail -30` or `make 2>&1 | head -50`, and the hook, by design, never rewrites piped
+commands. The cost differences above are run-to-run noise (single-run cost standard deviation ≈ 28 %); no task
+changed its success.
+
+What this does and does not tell you:
+- It **does** show that for short Claude Code sessions on a current model the savings are ≈ 0, which is the
+  opposite of the optimistic scenarios in §3 — those assume large raw outputs actually reach the context.
+- It does **not** cover long-horizon sessions (these ran 3–9 turns, ≈ $0.04 each), other agents (Codex/GPT may not
+  trim output the same way), or tasks where the agent needs the *whole* log. That is where the paper's gains
+  come from, and it was not tested here.
+- All tasks are solvable and were solved in both conditions (a ceiling effect), so quality differences would only
+  show up on harder tasks.
+- `python3 benchmarks/analyze_sessions.py` on *your own* history remains the quickest way to see whether big,
+  untrimmed outputs exist in your sessions at all.

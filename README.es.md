@@ -139,7 +139,7 @@ Implementa el ciclo **Propose $\rightarrow$ Probe $\rightarrow$ Filter $\rightar
 
 ## ❓ ¿Me sirve en mis sesiones?
 
-Respuesta honesta en [docs/WHEN_IT_HELPS.es.md](./docs/WHEN_IT_HELPS.es.md): ayuda a sesiones que ejecutan repetidamente builds/tests con salidas > 4 KB; en otro caso es un pequeño costo neto, la pila completa del propio paper puntúa ~3–6 % por debajo del baseline y este port externo MCP/hooks no puede reproducir las cifras del paper. Comprueba tu historial con `python3 benchmarks/analyze_sessions.py`.
+Respuesta honesta en [docs/WHEN_IT_HELPS.es.md](./docs/WHEN_IT_HELPS.es.md): ayuda a sesiones que ejecutan repetidamente builds/tests con salidas > 4 KB; en otro caso es un pequeño costo neto, la pila completa del propio paper puntúa ~3–6 % por debajo del baseline y este port externo MCP/hooks no puede reproducir las cifras del paper. Un A/B real (60 ejecuciones de Claude Code, 10 tareas) mostró **ningún efecto** en sesiones cortas: el agente ya recorta su propia salida, así que el hook nunca se activó. Comprueba tu historial con `python3 benchmarks/analyze_sessions.py`.
 
 ## 🚀 Instalación en 10 Segundos
 
