@@ -231,6 +231,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(act, file=sys.stderr)
             else:
                 print(f"{prefix}{act}")
+        if not args.dry_run and not failed:
+            print("[NOTE] Measured benefit in Claude Code is ~0 (the agent already trims its output): "
+                  "see docs/WHEN_IT_HELPS.md and run benchmarks/analyze_sessions.py on your own sessions.", file=sys.stderr)
         return 1 if failed else 0
 
     return 0

@@ -12,6 +12,17 @@
 [![Tests OK](https://img.shields.io/badge/Tests-22%2F22_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Aprobado por Nichis](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
+> [!WARNING]
+> **Estado: experimental — medido sin beneficio en Claude Code.** El reducer de logs funciona (recibos de build/test
+> 94–96 % más pequeños, sin perder ningún error plantado), pero en la práctica: un A/B de 60 ejecuciones con Claude Code
+> **no halló efecto** (el agente ya manda ~80 % de sus comandos por `tail`/`head`/`grep`, así que el hook nunca se
+> activó), y el análisis de un historial real de 113 sesiones mostró que los logs de build/test ≥ 4 KiB son solo
+> **0,1–0,5 %** de los tokens de cache-read y el objetivo más amplio posible (cualquier resultado grande de cualquier
+> herramienta) **≤ 2,7 %**, una cota superior antes de turnos de recuperación o pérdida de calidad.
+> Aún puede servir a agentes/modelos que *no* recortan su propia salida y a bucles propios sobre la API (usa los
+> módulos Python como librería). Detalles y cómo medir tus sesiones: [docs/WHEN_IT_HELPS.es.md](./docs/WHEN_IT_HELPS.es.md).
+
+
 *¡No dejes que tu agente de programación se vuelva un michi gordito lleno de bolas de pelos de logs (`4.8M tokens`)! Mantenlo ágil como un **Nichi** (`-92%` en logs de build/test en nuestro [benchmark](#-benchmark-reproducible), `100% de evidencia recuperable`, cero alucinaciones) 🐾✨*
 
 </div>

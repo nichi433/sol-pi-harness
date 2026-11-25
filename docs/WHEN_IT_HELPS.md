@@ -1,6 +1,6 @@
 # Will this help in my Claude Code / Codex / OpenCode sessions?
 
-Short answer: **sometimes, modestly, and not for free** — and in an A/B on short Claude Code tasks it did *nothing* (§7). It is worth installing if your sessions repeatedly run
+Short answer: **for Claude Code, no — measured (§7, §8).** It can help agents that dump raw logs, and custom API loops, modestly and not for free. It is worth installing if your sessions repeatedly run
 builds/tests that print more than a few KB. It is a net loss (small, but a loss) if they do not. This page says
 how to tell, with the numbers we have and the ones we do not.
 
@@ -165,3 +165,20 @@ What this does and does not tell you:
   were piped), and in the Sonnet runs tool output was only **≈ 1.3 % of the re-read context** (≈ 106k tokens per run,
   mostly system prompt and tool definitions). So in short sessions even a perfect output reducer could save ≈ 1 %;
   the lever, if any, is **long sessions where stale results pile up**, which a Bash hook cannot reach.
+
+## 8. Verdict (all evidence together)
+
+| Question | Evidence | Answer |
+| :--- | :--- | :--- |
+| Does the reducer shrink build/test logs without losing the errors? | `benchmarks/run_benchmark.py`, `solpi tune` | **Yes** — 94–96 % smaller, 21/21 planted errors kept |
+| Does it change an agent's cost in practice? | A/B, 10 tasks × 3 reps, Claude Code + Sonnet 5.5 (and Haiku) | **No** — hook fired 0 times; agent pipes ~80 % of commands through `tail`/`head`/`grep` |
+| Is there anything large to shrink in real sessions? | `analyze_sessions.py` on a 113-session history (user-reported) | **Barely** — build/test ≥ 4 KiB: 0.1 % of cache-read (0.54 % if compaction is ignored); any large result of any tool: **2.7 %** (20.5 % if compaction is ignored — which is why it must be modelled) |
+| Net of the tool overhead? | same run | ≈ $14 over 113 sessions at cache-read prices — an upper bound that ignores recall turns and quality |
+
+**Conclusion: for Claude Code this does not pay off**, and the same is likely for other agents that already trim
+their output. The paper's gains come from a harness it controls end-to-end (history rewriting, native compaction,
+fused edit tools) driving agents that do not trim; an external MCP/hook layer cannot reach them. Reasonable
+uses that remain: (1) agents or models that dump raw logs, (2) your own API agent loop, using
+`solpi.reducer` / `solpi.observation_pack` as a library, (3) reproducing/auditing the paper's mechanisms.
+What would change this verdict: long sessions with large *untrimmed* results — re-run
+`python3 benchmarks/analyze_sessions.py` on your own history, or `benchmarks/ab/run_ab.py` with your agent.

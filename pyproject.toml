@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sol-pi-harness"
 version = "0.1.0"
-description = "Open-source multi-harness toolkit implementing SoL-Pi (arXiv:2609.20519) & Harness2 efficiency loops for Antigravity (AGY), Claude Code, Codex, and Cursor."
+description = "EXPERIMENTAL (measured no benefit in Claude Code, see docs/WHEN_IT_HELPS.md): toolkit implementing SoL-Pi (arXiv:2609.20519) & Harness2 efficiency loops for Antigravity (AGY), Claude Code, Codex, and Cursor."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}

@@ -1,6 +1,6 @@
 # ¿Me sirve en mis sesiones de Claude Code / Codex / OpenCode?
 
-Respuesta corta: **a veces, de forma modesta y no gratis**, y en un A/B con tareas cortas de Claude Code *no hizo nada* (§7). Vale la pena si tus sesiones ejecutan una y otra vez
+Respuesta corta: **para Claude Code, no: medido (§7, §8).** Puede ayudar a agentes que vuelcan logs crudos y a bucles propios sobre la API, de forma modesta y no gratis. Vale la pena si tus sesiones ejecutan una y otra vez
 builds/tests que imprimen más de unos pocos KB. Es una pérdida neta (pequeña) si no. Aquí se explica cómo saberlo,
 con los números que tenemos y los que no.
 
@@ -165,3 +165,21 @@ Qué dice y qué no dice esto:
   **≈ 1,3 % del contexto releído** (≈ 106k tokens por ejecución, casi todo prompt de sistema y definiciones de
   herramientas). Es decir, en sesiones cortas ni un reductor perfecto ahorraría más de ≈ 1 %; la palanca, si existe,
   son las **sesiones largas donde se acumulan resultados viejos**, y un hook de Bash no llega ahí.
+
+## 8. Veredicto (toda la evidencia junta)
+
+| Pregunta | Evidencia | Respuesta |
+| :--- | :--- | :--- |
+| ¿El reducer encoge logs de build/test sin perder los errores? | `benchmarks/run_benchmark.py`, `solpi tune` | **Sí**: 94–96 % más pequeños, 21/21 errores plantados conservados |
+| ¿Cambia el costo de un agente en la práctica? | A/B, 10 tareas × 3 repeticiones, Claude Code + Sonnet 5.5 (y Haiku) | **No**: el hook se activó 0 veces; el agente manda ~80 % de sus comandos por `tail`/`head`/`grep` |
+| ¿Hay algo grande que reducir en sesiones reales? | `analyze_sessions.py` sobre un historial de 113 sesiones (reportado por un usuario) | **Casi nada**: build/test ≥ 4 KiB: 0,1 % del cache-read (0,54 % si se ignora la compactación); cualquier resultado grande de cualquier herramienta: **2,7 %** (20,5 % si se ignora la compactación, por eso hay que modelarla) |
+| ¿Neto tras el costo de las herramientas? | misma ejecución | ≈ $14 en 113 sesiones a precios de cache-read: una cota superior que ignora turnos de recuperación y calidad |
+
+**Conclusión: para Claude Code esto no compensa**, y probablemente tampoco para otros agentes que ya recortan su
+salida. Las ganancias del paper vienen de un harness que controla todo de extremo a extremo (reescritura del
+historial, compactación nativa, herramientas de edición fusionadas) sobre agentes que no recortan; una capa externa
+de MCP/hooks no llega ahí. Usos razonables que quedan: (1) agentes o modelos que vuelcan logs crudos, (2) tu propio
+bucle de agente sobre la API, usando `solpi.reducer` / `solpi.observation_pack` como librería, (3) reproducir o
+auditar los mecanismos del paper. Lo que cambiaría el veredicto: sesiones largas con resultados grandes *sin
+recortar*; vuelve a ejecutar `python3 benchmarks/analyze_sessions.py` sobre tu historial o
+`benchmarks/ab/run_ab.py` con tu agente.

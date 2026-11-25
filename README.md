@@ -12,6 +12,16 @@
 [![Tests Passing](https://img.shields.io/badge/Tests-22%2F22_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Nichi Approved](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
+> [!WARNING]
+> **Status: experimental — measured to give no benefit in Claude Code.** The log reducer works (94–96 % smaller
+> build/test receipts, no planted error lost), but in practice: a 60-run A/B with Claude Code found **no effect** (the
+> agent already pipes ~80 % of its commands through `tail`/`head`/`grep`, so the hook never fired), and an analysis of a
+> real 113-session history found build/test logs ≥ 4 KiB are only **0.1–0.5 %** of cache-read tokens and the broadest
+> possible target (any large result of any tool) **≤ 2.7 %** — an upper bound before recall turns or quality loss.
+> It may still help agents/models that do *not* trim their own output and custom API agent loops (use the Python
+> modules as a library). Details and how to check your own sessions: [docs/WHEN_IT_HELPS.md](./docs/WHEN_IT_HELPS.md).
+
+
 *Don't let your AI coding agent become a chonky log-hoarding cat (`4.8M tokens`). Keep it agile like a **Nichi** (`-92%` on build/test log payloads in our [benchmark](#-reproducible-benchmark), `100% recoverable evidence`, zero hallucinations)! 🐾✨*
 
 </div>
