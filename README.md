@@ -9,10 +9,10 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Recursive_Loop-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero_(Pure_Python)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests Passing](https://img.shields.io/badge/Tests-11%2F11_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests Passing](https://img.shields.io/badge/Tests-18%2F18_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Nichi Approved](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
-*Don't let your AI coding agent become a chonky log-hoarding cat (`4.8M tokens`). Keep it agile like a **Nichi** (`-49% tokens`, `100% verbatim evidence`, zero hallucinations)! 🐾✨*
+*Don't let your AI coding agent become a chonky log-hoarding cat (`4.8M tokens`). Keep it agile like a **Nichi** (`-92%` on build/test log payloads in our [benchmark](#-reproducible-benchmark), `100% recoverable evidence`, zero hallucinations)! 🐾✨*
 
 </div>
 
@@ -52,7 +52,7 @@ xychart-beta
     line [0.18, 0.45, 0.95, 1.50, 1.98, 2.45]
 ```
 > 🩷 **Top Line (`4.80M tokens`)**: Standard Unmodified Agent Harness (replaying raw logs & separate edit/test turns).  
-> 💚 **Bottom Line (`2.45M tokens`)**: **`sol-pi-harness` Active (`-49.0%` token traffic, `-$2.85 USD` saved per session)**.
+> 💚 **Bottom Line (`2.45M tokens`)**: **Paper-reported `-49.0%` token traffic (illustrative; NOT measured by this repo — see [Fidelity](#-fidelity-to-the-paper-arxiv260920519-24))**.
 
 ### 🧪 Real Telemetry from Our Live Workspace Verification
 
@@ -229,12 +229,43 @@ solpi stats
 
 ---
 
-## 🧪 Running the 11-Test Verification Suite
+## 📏 Reproducible Benchmark
+
+```bash
+python3 benchmarks/run_benchmark.py            # human-readable tables
+python3 benchmarks/run_benchmark.py --check    # exit 1 on a regression (also run by the test-suite)
+python3 benchmarks/run_benchmark.py --config winner.json   # compare a `solpi tune --write-config` result
+```
+
+It uses its own corpus (gcc, pytest, jest, cargo, a log with secrets, a real `unittest -v` run with injected failures, a real `grep`, a 40 KiB file read) with **planted ground-truth error lines**, and reports reduction, evidence that is *directly visible* in the receipt, evidence *recoverable* through the handle, and a naive `tail -n 40` baseline. Reference run:
+
+| Metric (7 build/test logs ≥ 4 KiB) | Result |
+| :--- | :---: |
+| Estimated tool-output tokens | 87,769 → 7,143 (**−91.9 %**) |
+| Planted errors visible in the receipt | **22/22** (naive `tail -n 40`: 7/22) |
+| Planted errors recoverable via `read_obs` (all 9 cases) | **24/24** |
+| Secrets leaked (receipt or stored log) / fail-opens | **0 / 0** |
+| Hook: simple build/test commands wrapped / risky ones wrapped | 8/8 / 0/10 |
+| Action Fusion: round trips, syntax gate, revert-on-fail | 2→1, blocks & keeps file intact, restores file |
+
+> [!IMPORTANT]
+> This measures **tool-output traffic** (tokens estimated as bytes/4), **not end-to-end session cost**. The `−44.7 – 49.0 %` token and `~33 %` cost figures quoted from the paper were measured on EdgeBench with the Pi harness; **this repository has not reproduced them**, and the 50-turn chart above is an illustration of the paper's range, not a measurement. Search results and file reads get little or no reduction by design (`grep` case: 0 %; the 40 KiB file read is archived behind a handle with head/tail only).
+
+## 📐 Fidelity to the Paper (arXiv:2609.20519, §2.4)
+
+| Paper mechanism | Here | Gap |
+| :--- | :--- | :--- |
+| **Action Fusion**: edit + follow-up command in one tool request | `solpi_fuse` (MCP) / `solpi fuse`, plus a syntax pre-check and optional revert | The paper extends the harness's own file-mutation tools; an external MCP tool must be *chosen* by the agent. The paper found prompt-only triggering unreliable, so expect a lower trigger rate than reported. |
+| **Online Context Compact**: gate at plan-step completion; remaining requests estimated from observed requests per step, capped by window growth; later compactions need a larger margin | `solpi milestone` implements the cost gate, the estimate (`--unfinished-steps`, `--requests-since-last`), the window cap, unrecovered-cost + growing margin, and the window-pressure trigger | The harness cannot invoke native compaction: it **recommends** `/compact` (hook notice at ≥65 % estimated window). Transcript size/4 is only a rough pressure estimate. |
+| **ObservationPack**: archive results > 10 KiB, send them in full for 2 requests, then a handle + ~1 KB head/tail excerpt | Archive + handle + head/tail + paged recall + dedup; threshold 10 KiB for non-build output | An external wrapper cannot rewrite earlier tool results, so the "full for the first two requests" grace window is **not** implemented (`grace_turns` only governs dedup of *identical* repeated output). Large results are packed immediately. |
+| **Evidence-Preserving Reducer**: build/test logs ≥ 4 KiB from a predefined command set; file reads/searches bypass; low-cost LLM extracts a receipt; deterministic verifier (schema, source hash, exit status, exact quotes, size); fall back to original on failure | Same command gating (`extra_command_regex` to extend), same verifier and fail-open; deterministic extractor by default, optional LLM (`GEMINI_API_KEY`) | Suspected credentials are **redacted** and the receipt still used, where the paper falls back to the original log. |
+
+## 🧪 Running the 18-Test Verification Suite
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-All 11 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
+All 18 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
 
 ---
 

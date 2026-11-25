@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .config import TelemetryTracker, get_store_dir, load_config
-from .reducer import reduce_log_fail_open, scan_and_redact_secrets
+from .reducer import is_reducible_command, reduce_log_fail_open, scan_and_redact_secrets
 
 
 @dataclass
@@ -92,7 +92,10 @@ class ObservationPackStore:
         raw_bytes = len(working_output.encode("utf-8"))
         pack_threshold = int(self.pack_cfg.get("threshold_bytes", 10240))
         reducer_threshold = int(self.reducer_cfg.get("threshold_bytes", 4096))
-        effective_threshold = min(pack_threshold, reducer_threshold)
+        # Paper: the reducer handles build/test logs >= 4 KiB; every other large result (file reads,
+        # searches, arbitrary commands) is only archived above the 10 KiB ObservationPack threshold.
+        reducible = is_reducible_command(command, self.reducer_cfg)
+        effective_threshold = min(pack_threshold, reducer_threshold) if reducible else pack_threshold
 
         if raw_bytes < effective_threshold:
             self.telemetry.record(
@@ -179,13 +182,16 @@ class ObservationPackStore:
             )
 
         # Run Evidence-Preserving Reducer
-        reduced_text, was_reduced, failed_open, _ = reduce_log_fail_open(
-            working_output,
-            exit_code,
-            obs_id=obs_id,
-            config=self.config,
-            custom_llm_fn=custom_llm_fn,
-        )
+        if reducible:
+            reduced_text, was_reduced, failed_open, _ = reduce_log_fail_open(
+                working_output,
+                exit_code,
+                obs_id=obs_id,
+                config=self.config,
+                custom_llm_fn=custom_llm_fn,
+            )
+        else:
+            reduced_text, was_reduced, failed_open = working_output, False, False
 
         head_n = int(self.pack_cfg.get("head_lines", 15))
         tail_n = int(self.pack_cfg.get("tail_lines", 20))

@@ -55,6 +55,38 @@ LOCATION_REGEX = re.compile(
 )
 
 
+# Paper (arXiv:2609.20519, Evidence-Preserving Reducer): only build/test logs "from a predefined set of
+# commands" are reduced; file reads and search results bypass the reducer.
+REDUCIBLE_CMD_REGEX = re.compile(
+    r"(?:^|[\s;&|(])(?:pytest|py\.test|tox|nox|mypy|ruff|flake8|pylint|jest|vitest|mocha|eslint|tsc|"
+    r"python3?\s+-m\s+(?:pytest|unittest|mypy|ruff|build|compileall)|"
+    r"cargo\s+(?:test|check|build|clippy|nextest|bench)|rustc|"
+    r"(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+(?:test|build|lint|typecheck|check)|install|ci)|"
+    r"go\s+(?:test|build|vet)|mvn|gradle|gradlew|\./gradlew|dotnet\s+(?:build|test)|"
+    r"make|cmake|ninja|bazel|gcc|g\+\+|clang\+*|javac|swift\s+(?:build|test)|"
+    r"docker\s+build|pip3?\s+install|uv\s+(?:sync|pip))(?=$|[\s;&|)])"
+)
+
+
+def is_reducible_command(command: str, cfg: Optional[Dict[str, Any]] = None) -> bool:
+    """True when `command` is a build/test/lint run whose log may go through the reducer.
+
+    An empty command (unknown provenance) is treated as reducible. Extra commands can be added with
+    `evidence_reducer.extra_command_regex` in `sol-pi.json`.
+    """
+    if not command or not command.strip():
+        return True
+    if REDUCIBLE_CMD_REGEX.search(command):
+        return True
+    extra = (cfg or {}).get("extra_command_regex")
+    if extra:
+        try:
+            return bool(re.search(extra, command))
+        except re.error:
+            return False
+    return False
+
+
 @dataclass
 class DiagnosticReceipt:
     source_hash: str

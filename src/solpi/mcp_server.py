@@ -108,7 +108,12 @@ TOOLS_SCHEMA = [
                 },
                 "expected_remaining_turns": {
                     "type": "integer",
-                    "description": "Estimated turns remaining in the overall task (default 5).",
+                    "description": "Remaining model requests, if you know it. Omit to let SoL-Pi estimate it from unfinished_steps and observed history.",
+                },
+                "unfinished_steps": {"type": "integer", "description": "Plan steps still unfinished."},
+                "requests_since_last_milestone": {
+                    "type": "integer",
+                    "description": "Model requests spent since the previous milestone.",
                 },
                 "files_modified": {
                     "type": "array",
@@ -218,6 +223,8 @@ def execute_mcp_tool(name: str, arguments: Dict[str, Any], config: Optional[Dict
                 completed_step=arguments["completed_step"],
                 current_tokens_est=int(arguments["current_tokens_est"]),
                 expected_remaining_turns=arguments.get("expected_remaining_turns"),
+                unfinished_steps=arguments.get("unfinished_steps"),
+                requests_since_last_milestone=arguments.get("requests_since_last_milestone"),
                 files_modified=arguments.get("files_modified"),
                 obs_handles=arguments.get("obs_handles"),
                 key_findings=arguments.get("key_findings"),

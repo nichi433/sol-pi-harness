@@ -9,10 +9,10 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Bucle_Recursivo-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Cero Dependencias](https://img.shields.io/badge/Dependencias-Cero_(Python_Puro)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests OK](https://img.shields.io/badge/Tests-11%2F11_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests OK](https://img.shields.io/badge/Tests-18%2F18_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Aprobado por Nichis](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
-*¡No dejes que tu agente de programación se vuelva un michi gordito lleno de bolas de pelos de logs (`4.8M tokens`)! Mantenlo ágil como un **Nichi** (`-49% tokens`, `100% evidencia literal verificada`, cero alucinaciones) 🐾✨*
+*¡No dejes que tu agente de programación se vuelva un michi gordito lleno de bolas de pelos de logs (`4.8M tokens`)! Mantenlo ágil como un **Nichi** (`-92%` en logs de build/test en nuestro [benchmark](#-benchmark-reproducible), `100% de evidencia recuperable`, cero alucinaciones) 🐾✨*
 
 </div>
 
@@ -52,7 +52,7 @@ xychart-beta
     line [0.18, 0.45, 0.95, 1.50, 1.98, 2.45]
 ```
 > 🩷 **Línea Superior (`4.80M tokens`)**: Agente Estándar sin optimizar (arrastrando logs crudos y turnos separados de edición/test).  
-> 💚 **Línea Inferior (`2.45M tokens`)**: **Agente con `sol-pi-harness` (`-49.0%` tráfico de tokens, `-$2.85 USD` ahorrados por sesión)**.
+> 💚 **Línea Inferior (`2.45M tokens`)**: **`-49,0%` de tráfico de tokens reportado por el paper (ilustrativo; NO medido por este repo — ver [Fidelidad](#-fidelidad-al-paper-arxiv260920519-24))**.
 
 ### 🧪 Telemetría Real de Nuestra Prueba en Vivo en Antigravity (AGY)
 
@@ -221,7 +221,38 @@ solpi stats
 
 ---
 
-## 🧪 Ejecutar las 11 Pruebas Automatizadas
+## 📏 Benchmark Reproducible
+
+```bash
+python3 benchmarks/run_benchmark.py            # tablas legibles
+python3 benchmarks/run_benchmark.py --check    # exit 1 si hay regresión (también lo ejecuta la suite de tests)
+python3 benchmarks/run_benchmark.py --config winner.json   # compara el resultado de `solpi tune --write-config`
+```
+
+Usa su propio corpus (gcc, pytest, jest, cargo, un log con secretos, un `unittest -v` real con fallos inyectados, un `grep` real y una lectura de archivo de 40 KiB) con **líneas de error plantadas como verdad**, y mide reducción, evidencia *visible directamente* en el recibo, evidencia *recuperable* por el handle y un baseline ingenuo `tail -n 40`. Ejecución de referencia:
+
+| Métrica (7 logs de build/test ≥ 4 KiB) | Resultado |
+| :--- | :---: |
+| Tokens estimados de salida de herramientas | 87.769 → 7.143 (**−91,9 %**) |
+| Errores plantados visibles en el recibo | **22/22** (`tail -n 40` ingenuo: 7/22) |
+| Errores plantados recuperables con `read_obs` (los 9 casos) | **24/24** |
+| Secretos filtrados (recibo o log guardado) / fail-opens | **0 / 0** |
+| Hook: comandos simples envueltos / comandos riesgosos envueltos | 8/8 / 0/10 |
+| Action Fusion: rondas, gate de sintaxis, revert-on-fail | 2→1, bloquea y deja el archivo intacto, restaura el archivo |
+
+> [!IMPORTANT]
+> Esto mide el **tráfico de salida de herramientas** (tokens estimados como bytes/4), **no el costo de una sesión completa**. Las cifras `−44,7 – 49,0 %` de tokens y `~33 %` de costo citadas del paper se midieron en EdgeBench con el harness Pi; **este repositorio no las ha reproducido**, y el gráfico de 50 turnos de arriba ilustra el rango del paper, no una medición. Las búsquedas y lecturas de archivos casi no se reducen por diseño (caso `grep`: 0 %; la lectura de 40 KiB se archiva tras un handle con solo head/tail).
+
+## 📐 Fidelidad al Paper (arXiv:2609.20519, §2.4)
+
+| Mecanismo del paper | Aquí | Diferencia |
+| :--- | :--- | :--- |
+| **Action Fusion**: edición + comando de seguimiento en una sola llamada | `solpi_fuse` (MCP) / `solpi fuse`, con pre-check de sintaxis y revert opcional | El paper extiende las herramientas de edición del propio harness; una herramienta MCP externa debe ser *elegida* por el agente. El paper halló poco fiable el disparo solo por prompt: espera una tasa de uso menor. |
+| **Online Context Compact**: gate al completar un paso del plan; solicitudes restantes estimadas por pasos observados y limitadas por el crecimiento de la ventana; compactaciones posteriores exigen más margen | `solpi milestone` implementa el gate de costo, la estimación (`--unfinished-steps`, `--requests-since-last`), el tope por ventana, el costo no recuperado + margen creciente y el disparo por presión de ventana | El harness no puede invocar la compactación nativa: **recomienda** `/compact` (aviso del hook con ≥65 % de ventana estimada). Tamaño del transcript/4 es solo una estimación burda. |
+| **ObservationPack**: archiva resultados > 10 KiB, los envía completos 2 solicitudes y luego handle + extracto de ~1 KB | Archivo + handle + head/tail + recall paginado + dedup; umbral de 10 KiB para salida que no es build | Un wrapper externo no puede reescribir resultados previos, así que la ventana de gracia de "completo las 2 primeras solicitudes" **no** está implementada (`grace_turns` solo gobierna la dedup de salida *idéntica* repetida). Los resultados grandes se empaquetan de inmediato. |
+| **Evidence-Preserving Reducer**: logs de build/test ≥ 4 KiB de un conjunto predefinido de comandos; lecturas/búsquedas lo evitan; un LLM barato extrae el recibo; verificador determinista (esquema, hash, exit, citas exactas, tamaño); fallback al original | Misma selección de comandos (`extra_command_regex` para ampliarla), mismo verificador y fail-open; extractor determinista por defecto, LLM opcional (`GEMINI_API_KEY`) | Ante credenciales sospechosas se **redactan** y se usa el recibo, mientras que el paper vuelve al log original. |
+
+## 🧪 Ejecutar las 18 Pruebas Automatizadas
 
 ```bash
 python3 -m unittest discover -s tests -v

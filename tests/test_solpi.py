@@ -293,9 +293,59 @@ class TestSoLPiMechanisms(unittest.TestCase):
         # end-to-end: big log with secrets is packed, reduced (not failed-open) and stored redacted
         big = "\n".join(f"INFO {i} ok" for i in range(2000)) + "\npassword=hunter2hunter2\nERROR a/b.py:9 boom\n"
         store = ObservationPackStore(store_dir=self.tmp_path / "secret_store")
-        res = store.pack(big, exit_code=1, command="x")
+        res = store.pack(big, exit_code=1, command="pytest -q")
         self.assertTrue(res.was_reduced and not res.failed_open)
         self.assertNotIn("hunter2hunter2", (self.tmp_path / "secret_store" / f"{res.obs_id}.log").read_text())
+
+    def test_reducer_only_for_build_test_commands_per_paper(self) -> None:
+        from solpi.reducer import is_reducible_command
+        for c in ("pytest -q", "cd app && npm test", "cargo build --release", "make test", "python3 -m unittest -v"):
+            self.assertTrue(is_reducible_command(c), c)
+        for c in ("cat big.log", "grep -rn foo src", "rg TODO", "find . -name '*.py'", "git log", "ls -R"):
+            self.assertFalse(is_reducible_command(c), c)
+        store = ObservationPackStore(store_dir=self.tmp_path / "bypass_store")
+        # 6 KiB search result: below the 10 KiB ObservationPack threshold -> untouched, no reducer
+        mid = "\n".join(f"src/a{i}.py:{i}:def f{i}(): error_handler()" for i in range(180))
+        self.assertTrue(4096 < len(mid) < 10240)
+        res = store.pack(mid, exit_code=0, command="grep -rn error src")
+        self.assertFalse(res.was_packed)
+        self.assertEqual(res.formatted_output, mid)
+        # same size from a test command IS reduced/packed (>= 4 KiB)
+        res = store.pack(mid, exit_code=1, command="pytest -q")
+        self.assertTrue(res.was_packed)
+        # 40 KiB search result: archived with handle + head/tail excerpt, but no reducer quotes
+        big = "\n".join(f"src/a{i}.py:{i}:def f{i}(): error_handler()" for i in range(1200))
+        res = store.pack(big, exit_code=0, command="grep -rn error src")
+        self.assertTrue(res.was_packed and not res.was_reduced)
+        self.assertNotIn("VERIFIED VERBATIM QUOTES", res.formatted_output)
+
+    def test_compaction_estimates_requests_and_raises_margin_after_first_compaction(self) -> None:
+        comp = OnlineContextCompactor(store_dir=self.tmp_path / "comp_store")
+        d1 = comp.evaluate_milestone("step1", current_tokens_est=80_000, unfinished_steps=4,
+                                     requests_since_last_milestone=6)
+        self.assertEqual(d1.remaining_turns_est, 24)
+        self.assertTrue(d1.should_compact)  # 6 req/step * 4 steps = 24 req: savings beat rewrite cost
+        # immediately after, same size: unrecovered rewrite cost + larger margin must block a re-compaction
+        d2 = comp.evaluate_milestone("step2", current_tokens_est=80_000, unfinished_steps=1,
+                                     requests_since_last_milestone=1)
+        self.assertFalse(d2.should_compact)
+        self.assertLess(d2.net_benefit_usd, d1.net_benefit_usd)
+        # window-growth cap: 68k tokens over 8 requests (8.5k/req) -> only 8 more requests fit in the window
+        comp3 = OnlineContextCompactor(store_dir=self.tmp_path / "comp_store3")
+        comp3.evaluate_milestone("a", current_tokens_est=60_000, unfinished_steps=10, requests_since_last_milestone=1)
+        d3 = comp3.evaluate_milestone("b", current_tokens_est=128_000, unfinished_steps=10,
+                                      requests_since_last_milestone=7)
+        self.assertEqual(d3.remaining_turns_est, 8)  # uncapped estimate would be 4 req/step * 10 = 40
+
+    def test_reproducible_benchmark_passes_its_regression_guards(self) -> None:
+        import subprocess
+        script = Path(__file__).resolve().parent.parent / "benchmarks" / "run_benchmark.py"
+        proc = subprocess.run([sys.executable, str(script), "--check", "--json"], capture_output=True, text=True,
+                              env={"PATH": "/usr/bin:/bin", "HOME": str(self.tmp_path)})
+        self.assertEqual(proc.returncode, 0, msg=proc.stdout[-800:] + proc.stderr[-800:])
+        rep = json.loads(proc.stdout)
+        self.assertEqual(rep["failures"], [])
+        self.assertGreaterEqual(rep["summary"]["reduction_pct"], 80)
 
     def test_tune_is_repeatable_across_runs(self) -> None:
         first = run_auto_research_loop(capability_floor=0.95)

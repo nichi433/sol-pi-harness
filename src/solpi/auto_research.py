@@ -82,9 +82,9 @@ def generate_synthetic_benchmark_corpus() -> List[Dict[str, Any]]:
     cargo_log = "\n".join(cargo_lines)
 
     return [
-        {"id": "pytest_long_suite", "exit_code": 1, "log": pytest_log},
-        {"id": "typescript_build_fail", "exit_code": 2, "log": ts_log},
-        {"id": "cargo_borrow_error", "exit_code": 101, "log": cargo_log},
+        {"id": "pytest_long_suite", "cmd": "pytest -v", "exit_code": 1, "log": pytest_log},
+        {"id": "typescript_build_fail", "cmd": "tsc --noEmit", "exit_code": 2, "log": ts_log},
+        {"id": "cargo_borrow_error", "cmd": "cargo build", "exit_code": 101, "log": cargo_log},
     ]
 
 
@@ -150,7 +150,7 @@ def run_auto_research_loop(
         recalls: List[float] = []
 
         for item in samples:
-            res = store.pack(item["log"], exit_code=item["exit_code"], command=item["id"])
+            res = store.pack(item["log"], exit_code=item["exit_code"], command=item.get("cmd", item["id"]))
             raw_total += res.raw_bytes
             trans_total += res.transmitted_bytes
             recalls.append(compute_evidence_recall(item["log"], res.formatted_output))

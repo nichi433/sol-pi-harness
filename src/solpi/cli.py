@@ -62,7 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_mile = sub.add_parser("milestone", help="Online Context Compaction economic evaluator & state checkpoint")
     p_mile.add_argument("--step", required=True, help="Completed subtask / plan step description")
     p_mile.add_argument("--tokens", type=int, required=True, help="Estimated active context tokens")
-    p_mile.add_argument("--remaining-turns", type=int, default=5, help="Estimated remaining turns in task")
+    p_mile.add_argument("--remaining-turns", type=int, default=None, help="Remaining model requests (default: estimated from --unfinished-steps and observed history)")
+    p_mile.add_argument("--unfinished-steps", type=int, default=None, help="Plan steps still to do (enables automatic estimation)")
+    p_mile.add_argument("--requests-since-last", type=int, default=None, help="Model requests spent since the previous milestone")
     p_mile.add_argument("--files", nargs="*", default=[], help="Modified files in this step")
     p_mile.add_argument("--obs", nargs="*", default=[], help="Relevant obs_* handles")
     p_mile.add_argument("--findings", default="", help="Verified key findings from this milestone")
@@ -162,6 +164,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             completed_step=args.step,
             current_tokens_est=args.tokens,
             expected_remaining_turns=args.remaining_turns,
+            unfinished_steps=args.unfinished_steps,
+            requests_since_last_milestone=args.requests_since_last,
             files_modified=args.files,
             obs_handles=args.obs,
             key_findings=args.findings,
