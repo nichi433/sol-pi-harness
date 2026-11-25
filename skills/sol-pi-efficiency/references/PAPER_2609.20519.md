@@ -8,7 +8,7 @@
 ## Summary of the 6 Proposal Families (152 Candidates -> 4 Survivors)
 The SoL-Pi outer auto-research loop evaluated 152 candidate modifications across 6 families (`Context`, `Progress`, `Tools`, `Delegation`, `Prompt and Policy`, `Improvement and Evaluation`) on 500+ executable environments and validated on **EdgeBench** (51 long-horizon coding tasks).
 
-Only **4 reusable mechanisms** passed both the **Capability Floor** and **Efficiency Gate**, cutting token traffic by **44.7%–49.0%** and API cost by **~33%–50%**:
+Only **4 reusable mechanisms** passed capability-constrained selection. The complete stack cut token traffic by **44.7%–49.0%** and API cost by **~33%** *relative to the Pi baseline* (−54% cost vs native Claude Code on Opus 5) while keeping ~94–97% of the baseline score (not 100%; Terminal-Bench 4: 15 vs 18 tasks). See `docs/PAPER_2609.20519.md` §4:
 
 1. **Action Fusion (Tools)**: Combines a file edit/write and its immediate follow-up validation command into a single tool call (`solpi_fuse`).
 2. **ObservationPack (Observations)**: Replaces large outputs (`>= 10 KiB`) after a 2-turn grace window with stable handles (`obs_<id>`), head/tail excerpts (~1 KB), and exact paged recall (`solpi_read_obs`).

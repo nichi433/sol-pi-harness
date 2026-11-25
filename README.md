@@ -9,7 +9,7 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Recursive_Loop-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero_(Pure_Python)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests Passing](https://img.shields.io/badge/Tests-20%2F20_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests Passing](https://img.shields.io/badge/Tests-21%2F21_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Nichi Approved](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
 *Don't let your AI coding agent become a chonky log-hoarding cat (`4.8M tokens`). Keep it agile like a **Nichi** (`-92%` on build/test log payloads in our [benchmark](#-reproducible-benchmark), `100% recoverable evidence`, zero hallucinations)! 🐾✨*
@@ -31,7 +31,7 @@ As autonomous coding agents (**Google Antigravity / AGY**, **Claude Code**, **Op
 2. 🙀 **Chonky Hairball Logs**: Re-sending 40 KB of build output in the prompt history across 50 subsequent turns.
 3. 😾 **Panic Context Compaction**: Waiting until 95% context window overflow mid-debugging to truncate memory.
 
-In **[SoL-Pi (arXiv:2609.20519)](https://arxiv.org/abs/2609.20519)**, researchers from **NVIDIA (NVlabs), NTU, and MIT** tested **152 candidate harness ideas** across 6 families and 500+ executable environments. Only **4 mechanisms** survived strict capability floors—cutting token traffic by **44.7% – 49.0%** and API costs by **~33% – 50%** with **zero loss in task solve rate**.
+In **[SoL-Pi (arXiv:2609.20519)](https://arxiv.org/abs/2609.20519)**, researchers from **NVIDIA (NVlabs), NTU, and MIT** tested **152 candidate harness ideas** across 6 families and 500+ executable environments. Only **4 mechanisms** survived capability-constrained selection. The full stack cut token traffic by **44.7% – 49.0%** and API cost by **~⅓ relative to the paper's Pi baseline** (−54 % vs native Claude Code on Opus 5) **while keeping ~94–97 % of the baseline score** — a few percent *worse*, not equal (Terminal-Bench 4: 15 vs 18 tasks solved). See [what the paper really says](./docs/PAPER_2609.20519.md#4-benchmark-results-reported-in-arxiv260920519-re-checked-against-the-papers-tables-1-4) and [**will it help in my sessions?**](./docs/WHEN_IT_HELPS.md)
 
 **`sol-pi-harness`** packages all 4 surviving mechanisms—plus an **Auto-Research RSI tuning loop (`solpi tune`)** inspired by **[`google-research/harness2`](https://github.com/google-research/harness2)**—into a zero-dependency **MCP Server + Skill + Lifecycle Hook** bundle you can install in **10 seconds**! 🐱✨
 
@@ -60,7 +60,7 @@ We tested `sol-pi-harness` live on a noisy 258-line test suite (`demo_app.py`) w
 
 | Metric / Mechanism | Without `sol-pi-harness` 😿 | With `sol-pi-harness` 😻 | Net Nichi Savings 🐾 |
 | :--- | :---: | :---: | :---: |
-| **Edit $\rightarrow$ Test Round-Trips** (`Action Fusion`) | 2 LLM turns (~50k context replay) | **1 Fused Turn** (`solpi_fuse`) | **-50% turns** (1 full LLM call avoided) |
+| **Edit $\rightarrow$ Test Round-Trips** (`Action Fusion`) | 2 LLM calls per edit+verify | **1 call** (`solpi_fuse`) | **1 LLM call avoided per fused edit+verify** (paper: ~11.5 % of tokens *if every opportunity triggers*; trigger rate is lower in practice) |
 | **Diagnostic Log Payload** (`ObservationPack` + `Reducer`) | `40,817 Bytes` (~10,204 tokens) | **`8,942 Bytes`** (~2,235 tokens) | **`-78.09%` immediate byte reduction** |
 | **50-Turn Context Replay Multiplier** | `10,204 tok × 50 = 510,200 tok` | `2,235 tok × 50 = 111,750 tok` | **`~398,450 input tokens` avoided** |
 | **Milestone Context Pruning** (`Online Compaction`) | Waits until 95% crash | Pruned at **70% milestone boundary** | **`~84,000 prunable tokens` flagged cleanly** |
@@ -136,6 +136,10 @@ Implements the **Propose $\rightarrow$ Probe $\rightarrow$ Filter $\rightarrow$ 
 - `solpi tune [--real] [--quick] [--seed N] [--verbose] [--write-config sol-pi.json]`.
 
 ---
+
+## ❓ Will it help in my sessions?
+
+Honest answer in [docs/WHEN_IT_HELPS.md](./docs/WHEN_IT_HELPS.md): it helps sessions that repeatedly run builds/tests printing > 4 KB; it is a small net cost otherwise, the paper's own full stack scores ~3–6 % below baseline, and this external MCP/hook port cannot reproduce the paper's numbers. Check your own history with `python3 benchmarks/analyze_sessions.py`.
 
 ## 🚀 10-Second Quickstart
 
@@ -262,12 +266,12 @@ It uses its own corpus (gcc, pytest, jest, cargo, a log with secrets, a real `un
 | **ObservationPack**: archive results > 10 KiB, send them in full for 2 requests, then a handle + ~1 KB head/tail excerpt | Archive + handle + head/tail + paged recall + dedup; threshold 10 KiB for non-build output | An external wrapper cannot rewrite earlier tool results, so the "full for the first two requests" grace window is **not** implemented (`grace_turns` only governs dedup of *identical* repeated output). Large results are packed immediately. |
 | **Evidence-Preserving Reducer**: build/test logs ≥ 4 KiB from a predefined command set; file reads/searches bypass; low-cost LLM extracts a receipt; deterministic verifier (schema, source hash, exit status, exact quotes, size); fall back to original on failure | Same command gating (`extra_command_regex` to extend), same verifier and fail-open; deterministic extractor by default, optional LLM (`GEMINI_API_KEY`) | Suspected credentials are **redacted** and the receipt still used, where the paper falls back to the original log. |
 
-## 🧪 Running the 20-Test Verification Suite
+## 🧪 Running the 21-Test Verification Suite
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-All 20 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
+All 21 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
 
 ---
 

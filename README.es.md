@@ -9,7 +9,7 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Bucle_Recursivo-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Cero Dependencias](https://img.shields.io/badge/Dependencias-Cero_(Python_Puro)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests OK](https://img.shields.io/badge/Tests-20%2F20_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests OK](https://img.shields.io/badge/Tests-21%2F21_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Aprobado por Nichis](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
 *¡No dejes que tu agente de programación se vuelva un michi gordito lleno de bolas de pelos de logs (`4.8M tokens`)! Mantenlo ágil como un **Nichi** (`-92%` en logs de build/test en nuestro [benchmark](#-benchmark-reproducible), `100% de evidencia recuperable`, cero alucinaciones) 🐾✨*
@@ -31,7 +31,7 @@ Cuando los agentes autónomos de código (**Google Antigravity / AGY**, **Claude
 2. 🙀 **Bolas de Pelos en el Contexto**: Meter 40 KB de logs de compilación en el historial y reenviarlos en los siguientes 50 turnos aunque solo importaban 10 líneas.
 3. 😾 **Compactación de Pánico**: Esperar a que la ventana de contexto llegue al 95% a mitad de un debugging para truncar la memoria y romper la caché de prompts (*KV-Cache*).
 
-En el paper **[SoL-Pi (arXiv:2609.20519)](https://arxiv.org/abs/2609.20519)**, investigadores de **NVIDIA (NVlabs), NTU y MIT** pusieron a competir **152 ideas de optimización de harness** en 6 familias a través de más de 500 entornos ejecutables. Solo **4 mecanismos** sobrevivieron sin degradar la inteligencia del agente: logrando **reducir el tráfico de tokens entre un `44.7%` y `49.0%`** y los costos de API entre **un tercio y la mitad (`~33% - 50%`)**.
+En el paper **[SoL-Pi (arXiv:2609.20519)](https://arxiv.org/abs/2609.20519)**, investigadores de **NVIDIA (NVlabs), NTU y MIT** pusieron a competir **152 ideas de optimización de harness** en 6 familias a través de más de 500 entornos ejecutables. Solo **4 mecanismos** sobrevivieron a una selección con piso de capacidad. La pila completa redujo el tráfico de tokens entre un **`44.7%` y `49.0%`** y el costo de API en **~⅓ respecto al baseline Pi del paper** (−54 % frente a Claude Code nativo con Opus 5), **conservando ~94–97 % de la puntuación del baseline**: algo *peor*, no igual (Terminal-Bench 4: 15 vs 18 tareas resueltas). Mira [qué dice realmente el paper](./docs/PAPER_2609.20519.md#4-benchmark-results-reported-in-arxiv260920519-re-checked-against-the-papers-tables-1-4) y [**¿me sirve en mis sesiones?**](./docs/WHEN_IT_HELPS.es.md)
 
 **`sol-pi-harness`** empaqueta esos 4 mecanismos exactos —más un **bucle de auto-investigación RSI (`solpi tune`)** inspirado en **[`google-research/harness2`](https://github.com/google-research/harness2)**— en un combo de **Servidor MCP + Skill + Hooks Automáticos + Reglas** que puedes instalar en **10 segundos** y sin dependencias externas 🐱✨.
 
@@ -60,7 +60,7 @@ Probamos `sol-pi-harness` en vivo aquí mismo sobre un script con 258 líneas de
 
 | Métrica / Mecanismo | Sin `sol-pi-harness` 😿 | Con `sol-pi-harness` 😻 | Ahorro Nichi Neto 🐾 |
 | :--- | :---: | :---: | :---: |
-| **Turnos Editar $\rightarrow$ Probar** (`Action Fusion`) | 2 turnos de LLM (~50k tokens reenviados) | **1 Turno Fusionado** (`solpi_fuse`) | **-50% turnos** (1 llamada completa al LLM evitada) |
+| **Turnos Editar $\rightarrow$ Probar** (`Action Fusion`) | 2 llamadas al LLM por edición+verificación | **1 llamada** (`solpi_fuse`) | **1 llamada evitada por cada edición+verificación fusionada** (paper: ~11,5 % de tokens *si se dispara en todas las oportunidades*; en la práctica se dispara menos) |
 | **Peso de Logs de Tests** (`ObservationPack` + `Reducer`) | `40,817 Bytes` (~10,204 tokens) | **`8,942 Bytes`** (~2,235 tokens) | **`-78.09%` de reducción inmediata en bytes** |
 | **Efecto Multiplicador en 50 Turnos** | `10,204 tok × 50 = 510,200 tok` | `2,235 tok × 50 = 111,750 tok` | **`~398,450 input tokens` evitados en el historial** |
 | **Poda en Fin de Subtarea** (`Online Compaction`) | Espera hasta colapsar al 95% | Podado limpio al **70% en frontera de hito** | **`~84,000 tokens` marcados listos para podar** |
@@ -136,6 +136,10 @@ Implementa el ciclo **Propose $\rightarrow$ Probe $\rightarrow$ Filter $\rightar
 - `solpi tune [--real] [--quick] [--seed N] [--verbose] [--write-config sol-pi.json]`.
 
 ---
+
+## ❓ ¿Me sirve en mis sesiones?
+
+Respuesta honesta en [docs/WHEN_IT_HELPS.es.md](./docs/WHEN_IT_HELPS.es.md): ayuda a sesiones que ejecutan repetidamente builds/tests con salidas > 4 KB; en otro caso es un pequeño costo neto, la pila completa del propio paper puntúa ~3–6 % por debajo del baseline y este port externo MCP/hooks no puede reproducir las cifras del paper. Comprueba tu historial con `python3 benchmarks/analyze_sessions.py`.
 
 ## 🚀 Instalación en 10 Segundos
 
@@ -254,7 +258,7 @@ Usa su propio corpus (gcc, pytest, jest, cargo, un log con secretos, un `unittes
 | **ObservationPack**: archiva resultados > 10 KiB, los envía completos 2 solicitudes y luego handle + extracto de ~1 KB | Archivo + handle + head/tail + recall paginado + dedup; umbral de 10 KiB para salida que no es build | Un wrapper externo no puede reescribir resultados previos, así que la ventana de gracia de "completo las 2 primeras solicitudes" **no** está implementada (`grace_turns` solo gobierna la dedup de salida *idéntica* repetida). Los resultados grandes se empaquetan de inmediato. |
 | **Evidence-Preserving Reducer**: logs de build/test ≥ 4 KiB de un conjunto predefinido de comandos; lecturas/búsquedas lo evitan; un LLM barato extrae el recibo; verificador determinista (esquema, hash, exit, citas exactas, tamaño); fallback al original | Misma selección de comandos (`extra_command_regex` para ampliarla), mismo verificador y fail-open; extractor determinista por defecto, LLM opcional (`GEMINI_API_KEY`) | Ante credenciales sospechosas se **redactan** y se usa el recibo, mientras que el paper vuelve al log original. |
 
-## 🧪 Ejecutar las 20 Pruebas Automatizadas
+## 🧪 Ejecutar las 21 Pruebas Automatizadas
 
 ```bash
 python3 -m unittest discover -s tests -v

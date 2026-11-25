@@ -380,6 +380,44 @@ class TestSoLPiMechanisms(unittest.TestCase):
         self.assertEqual(rep["failures"], [])
         self.assertGreaterEqual(rep["summary"]["reduction_pct"], 80)
 
+    def test_session_analyzer_estimates_payoff_from_transcripts(self) -> None:
+        import subprocess
+        d = self.tmp_path / "transcripts"
+        d.mkdir()
+
+        def session(path: Path, n_req: int, big_at: dict) -> None:
+            lines = []
+            for i in range(n_req):
+                blocks = []
+                if i in big_at:
+                    blocks.append({"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": big_at[i][0]}})
+                lines.append({"type": "assistant", "message": {"id": f"m{i}", "content": blocks,
+                                                               "usage": {"cache_read_input_tokens": 100_000}}})
+                if i in big_at:
+                    lines.append({"type": "user", "message": {"content": [
+                        {"type": "tool_result", "tool_use_id": f"t{i}", "content": "x" * big_at[i][1]}]}})
+            path.write_text("\n".join(json.dumps(x) for x in lines) + "\nnot json\n", encoding="utf-8")
+
+        # 100 requests; a 40,000-char `pytest -q` result at request 10 (reducible AND hook-rewritable),
+        # a 40,000-char `cd x && pytest` (reducible, NOT rewritten by the hook) and a 40,000-char `cat f`
+        session(d / "a.jsonl", 100, {10: ("pytest -q", 40_000), 20: ("cd x && pytest", 40_000), 30: ("cat big.txt", 40_000)})
+        session(d / "b.jsonl", 50, {})
+        script = Path(__file__).resolve().parent.parent / "benchmarks" / "analyze_sessions.py"
+        proc = subprocess.run([sys.executable, str(script), str(d), "--json"], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        res = json.loads(proc.stdout)
+        self.assertEqual(res["sessions"], 2)
+        self.assertEqual(res["requests"], 150)
+        sc = res["scenarios"]
+        self.assertEqual(sc["hook_only"]["results"], 1)      # only the simple `pytest -q`
+        self.assertEqual(sc["reducible"]["results"], 2)      # + `cd x && pytest`
+        self.assertEqual(sc["all_big"]["results"], 3)        # + `cat`
+        # 10,000 tok * 0.9 * 89 later requests = 0.801 Mtok saved by the hook alone
+        self.assertAlmostEqual(sc["hook_only"]["saved_mtok"], 0.8, delta=0.02)
+        self.assertGreater(sc["all_big"]["saved_mtok"], sc["reducible"]["saved_mtok"])
+        # fixed overhead is charged on every request of every session (150 x 735 tokens)
+        self.assertAlmostEqual(res["fixed_overhead_mtok"], 0.11, delta=0.01)
+
     def test_tune_is_repeatable_across_runs(self) -> None:
         first = run_auto_research_loop(capability_floor=0.95, quick=True)
         second = run_auto_research_loop(capability_floor=0.95, quick=True)

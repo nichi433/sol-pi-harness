@@ -20,6 +20,7 @@ Exposed Tools:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -36,21 +37,20 @@ TOOLS_SCHEMA = [
     {
         "name": "solpi_fuse",
         "description": (
-            "SoL-Pi Action Fusion (arXiv:2609.20519): Atomically edits a file AND executes its immediate "
-            "validation command (e.g. pytest, cargo test, tsc, ruff) in a SINGLE turn, avoiding an extra "
-            "round-trip model call. Performs a syntax pre-check and packs the validation log via ObservationPack."
+            "Edit a file (exact substring replace) AND run its verification command in ONE call. "
+            "Syntax-checks first; output is packed like solpi_run."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "file_path": {"type": "string", "description": "Path to the file to edit."},
-                "target": {"type": "string", "description": "Exact substring in the file to replace."},
-                "replacement": {"type": "string", "description": "Replacement content for target."},
-                "verify_cmd": {"type": "string", "description": "Shell command to validate the edit immediately."},
-                "cwd": {"type": "string", "description": "Optional working directory for verify_cmd."},
+                "file_path": {"type": "string", "description": "File to edit."},
+                "target": {"type": "string", "description": "Exact substring to replace."},
+                "replacement": {"type": "string", "description": "Replacement text."},
+                "verify_cmd": {"type": "string", "description": "Command that verifies the edit."},
+                "cwd": {"type": "string", "description": "Working directory."},
                 "revert_on_test_failure": {
                     "type": "boolean",
-                    "description": "If true, automatically reverts the file if verify_cmd exits non-zero.",
+                    "description": "Restore the file if verify_cmd fails.",
                 },
             },
             "required": ["file_path", "target", "replacement", "verify_cmd"],
@@ -59,16 +59,15 @@ TOOLS_SCHEMA = [
     {
         "name": "solpi_run",
         "description": (
-            "SoL-Pi ObservationPack + Evidence-Preserving Reducer: Executes a shell command (test suite, build, "
-            "linter, log dump) and archives large outputs (>4 KB) into a content-addressed `obs_<id>` handle. "
-            "Returns a verified diagnostic receipt with 100% verbatim source quotes and paged recall instructions."
+            "Run a build/test/lint command. Large output (>4 KB) is archived behind an `obs_<id>` handle and "
+            "returned as a receipt of verbatim error lines + head/tail; recall the rest with solpi_read_obs."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "cmd": {"type": "string", "description": "Shell command to run."},
-                "cwd": {"type": "string", "description": "Optional working directory."},
-                "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 120)."},
+                "cwd": {"type": "string", "description": "Working directory."},
+                "timeout_sec": {"type": "integer", "description": "Timeout seconds (120)."},
             },
             "required": ["cmd"],
         },
@@ -76,17 +75,16 @@ TOOLS_SCHEMA = [
     {
         "name": "solpi_read_obs",
         "description": (
-            "SoL-Pi Paged Recall: Retrieves an exact page, line range around a line number, or regex grep "
-            "from an archived ObservationPack handle (`obs_<id>`)."
+            "Read an archived output by handle: a page, a regex grep, or lines around a line number."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "obs_id": {"type": "string", "description": "The ObservationPack handle ID (e.g. 'obs_8f3a1b2c9d')."},
-                "page": {"type": "integer", "description": "1-based page number to retrieve (default 1)."},
-                "grep_pattern": {"type": "string", "description": "Optional regex pattern to filter matching lines."},
-                "around_line": {"type": "integer", "description": "Optional line number to inspect neighborhood around."},
-                "radius": {"type": "integer", "description": "Number of context lines around `around_line` (default 20)."},
+                "obs_id": {"type": "string", "description": "Handle, e.g. obs_8f3a1b2c9d."},
+                "page": {"type": "integer", "description": "1-based page."},
+                "grep_pattern": {"type": "string", "description": "Regex filter."},
+                "around_line": {"type": "integer", "description": "Show lines around this line number."},
+                "radius": {"type": "integer", "description": "Context lines (20)."},
             },
             "required": ["obs_id"],
         },
@@ -94,39 +92,38 @@ TOOLS_SCHEMA = [
     {
         "name": "solpi_milestone",
         "description": (
-            "SoL-Pi Online Context Compaction: Records a completed plan subtask milestone, evaluates the "
-            "KV-Cache economic break-even formula, and returns a compacted Milestone State Receipt indicating "
-            "whether to compact context now or keep the prompt cache warm."
+            "At a finished plan step: record it and get a cost-based advice on whether to /compact now "
+            "or keep the prompt cache warm."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "completed_step": {"type": "string", "description": "Name or description of the completed plan step."},
+                "completed_step": {"type": "string", "description": "Completed step."},
                 "current_tokens_est": {
                     "type": "integer",
-                    "description": "Estimated active context tokens in the conversation so far.",
+                    "description": "Current context tokens (estimate).",
                 },
                 "expected_remaining_turns": {
                     "type": "integer",
-                    "description": "Remaining model requests, if you know it. Omit to let SoL-Pi estimate it from unfinished_steps and observed history.",
+                    "description": "Remaining requests; omit to estimate from unfinished_steps.",
                 },
-                "unfinished_steps": {"type": "integer", "description": "Plan steps still unfinished."},
+                "unfinished_steps": {"type": "integer", "description": "Unfinished plan steps."},
                 "requests_since_last_milestone": {
                     "type": "integer",
-                    "description": "Model requests spent since the previous milestone.",
+                    "description": "Requests since last milestone.",
                 },
                 "files_modified": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of file paths modified during this subtask.",
+                    "description": "Files changed.",
                 },
                 "obs_handles": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of `obs_*` handles generated during this subtask.",
+                    "description": "Handles produced.",
                 },
-                "key_findings": {"type": "string", "description": "Concise verified summary of the milestone outcome."},
-                "next_step": {"type": "string", "description": "The next subtask to execute."},
+                "key_findings": {"type": "string", "description": "Verified outcome summary."},
+                "next_step": {"type": "string", "description": "Next step."},
             },
             "required": ["completed_step", "current_tokens_est"],
         },
@@ -158,6 +155,17 @@ TOOLS_SCHEMA = [
         },
     },
 ]
+
+
+# Every listed tool costs context tokens on EVERY request. The developer tools stay callable but are only
+# advertised when SOLPI_MCP_TOOLS=all (default "core": fuse, run, read_obs, milestone).
+CORE_TOOLS = {"solpi_fuse", "solpi_run", "solpi_read_obs", "solpi_milestone"}
+
+
+def listed_tools() -> list:
+    if os.environ.get("SOLPI_MCP_TOOLS", "core").lower() == "all":
+        return TOOLS_SCHEMA
+    return [t for t in TOOLS_SCHEMA if t["name"] in CORE_TOOLS]
 
 
 def execute_mcp_tool(name: str, arguments: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -281,7 +289,7 @@ def handle_jsonrpc_message(msg: Dict[str, Any], config: Optional[Dict[str, Any]]
         return {"jsonrpc": "2.0", "id": req_id, "result": {}}
 
     elif method == "tools/list":
-        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS_SCHEMA}}
+        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": listed_tools()}}
 
     elif method == "tools/call":
         tool_name = params.get("name", "")
