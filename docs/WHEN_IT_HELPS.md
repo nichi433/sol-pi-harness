@@ -182,3 +182,34 @@ uses that remain: (1) agents or models that dump raw logs, (2) your own API agen
 `solpi.reducer` / `solpi.observation_pack` as a library, (3) reproducing/auditing the paper's mechanisms.
 What would change this verdict: long sessions with large *untrimmed* results — re-run
 `python3 benchmarks/analyze_sessions.py` on your own history, or `benchmarks/ab/run_ab.py` with your agent.
+
+## 9. Own agent loop on the raw API (no harness)
+
+**Correction to §3/§7 advice: do not rewrite old tool results client-side on current models.** The paper's
+ObservationPack swaps a result for a handle two requests after it was sent. That is a *history edit*. On current Claude
+models (Sonnet 5.5, Opus 5.5, Fable/Mythos 5.x, Haiku 5.5) thinking blocks are bound to the exact prefix they were
+produced under: editing an earlier message either returns a 400 (accounts created on/after 2026-08-31) or, with
+`prefix_mismatch_behavior: "drop_block"`, silently drops the reasoning — and it invalidates the prompt cache from the
+edit onward. The sanctioned way to clear old results is **server-side context editing**
+(`clear_tool_uses_20250919`, beta `context-management-2025-06-27`), which does not count as an edit.
+
+So `benchmarks/api_loop/` compares four append-only policies in a minimal raw-API loop (official `anthropic` SDK,
+prompt caching on, three long tasks of 30–60 tool calls each: 12 independent bugs, a C project with six defects, an API
+migration across 24 modules):
+
+| Arm | What the model sees |
+| :--- | :--- |
+| **N** naive | raw tool output (≤ 100 KB) |
+| **T** trim | head + tail 8 KB of every output (what agents already do) |
+| **S** sol-pi | build/test → verified receipt; any other result ≥ 10 KiB → handle + excerpt + `solpi_read_obs` (decided when the result is produced, so the history stays append-only) |
+| **C** ctx-edit | raw output + the API's own `clear_tool_uses_20250919` (trigger 30k tokens, keep 3) |
+
+```bash
+pip install anthropic && export ANTHROPIC_API_KEY=...        # you run this: it spends your API credit
+python3 benchmarks/api_loop/run_ab.py --out api_ab --reps 1 --total-budget 15
+```
+
+It prints cost, turns, cache-read tokens, tool-result bytes and success per task and arm, relative to N. **Not run yet
+by the author** (no API key in the development environment); the loop, the arms and the tasks are covered by offline
+tests with a scripted client (`tests/test_api_loop.py`). Expect arm T and C to be the serious competitors: if the API's
+own context editing or a plain head/tail cap matches S, this toolkit adds nothing on the raw API either.

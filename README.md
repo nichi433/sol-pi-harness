@@ -9,7 +9,7 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Recursive_Loop-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero_(Pure_Python)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests Passing](https://img.shields.io/badge/Tests-22%2F22_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests Passing](https://img.shields.io/badge/Tests-32%2F32_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Nichi Approved](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
 > [!WARNING]
@@ -278,12 +278,12 @@ It uses its own corpus (gcc, pytest, jest, cargo, a log with secrets, a real `un
 | **ObservationPack**: archive results > 10 KiB, send them in full for 2 requests, then a handle + ~1 KB head/tail excerpt | Archive + handle + head/tail + paged recall + dedup; threshold 10 KiB for non-build output | An external wrapper cannot rewrite earlier tool results, so the "full for the first two requests" grace window is **not** implemented (`grace_turns` only governs dedup of *identical* repeated output). Large results are packed immediately. |
 | **Evidence-Preserving Reducer**: build/test logs ≥ 4 KiB from a predefined command set; file reads/searches bypass; low-cost LLM extracts a receipt; deterministic verifier (schema, source hash, exit status, exact quotes, size); fall back to original on failure | Same command gating (`extra_command_regex` to extend), same verifier and fail-open; deterministic extractor by default, optional LLM (`GEMINI_API_KEY`) | Suspected credentials are **redacted** and the receipt still used, where the paper falls back to the original log. |
 
-## 🧪 Running the 22-Test Verification Suite
+## 🧪 Running the 32-Test Verification Suite
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-All 22 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
+All 32 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
 
 ---
 

@@ -36,6 +36,14 @@ class PackedObservationResult:
     exit_code: int
 
 
+MAX_EXCERPT_LINE = 300
+
+
+def _clip(line: str) -> str:
+    """Excerpt lines are shown, not quoted: cap them so one giant line (minified JSON, base64...) cannot defeat the pack."""
+    return line if len(line) <= MAX_EXCERPT_LINE else f"{line[:MAX_EXCERPT_LINE]} [...+{len(line) - MAX_EXCERPT_LINE} chars]"
+
+
 class ObservationPackStore:
     """Manages content-addressed observation storage, deduplication, and paged recall."""
 
@@ -152,8 +160,8 @@ class ObservationPackStore:
         # If seen >= 3 times (beyond 2-turn grace window for identical output), emit compact delta ref
         grace_turns = int(self.pack_cfg.get("grace_turns", 2))
         if was_deduplicated and seen_count > grace_turns:
-            head_preview = "\n".join(lines[:5])
-            tail_preview = "\n".join(lines[-5:])
+            head_preview = "\n".join(_clip(l) for l in lines[:5])
+            tail_preview = "\n".join(_clip(l) for l in lines[-5:])
             compact_ref = (
                 f"[SoL-Pi ObservationPack Deduplicated Handle: {obs_id} | Seen #{seen_count} | "
                 f"Exit: {exit_code} | Raw: {raw_bytes} B ({total_lines} lines, {total_pages} pages)]\n"
@@ -195,9 +203,9 @@ class ObservationPackStore:
 
         head_n = int(self.pack_cfg.get("head_lines", 15))
         tail_n = int(self.pack_cfg.get("tail_lines", 20))
-        head_block = "\n".join(f"L{i+1}: {lines[i]}" for i in range(min(head_n, total_lines)))
+        head_block = "\n".join(f"L{i+1}: {_clip(lines[i])}" for i in range(min(head_n, total_lines)))
         tail_start = max(min(head_n, total_lines), total_lines - tail_n)
-        tail_block = "\n".join(f"L{i+1}: {lines[i]}" for i in range(tail_start, total_lines))
+        tail_block = "\n".join(f"L{i+1}: {_clip(lines[i])}" for i in range(tail_start, total_lines))
 
         sections = [
             f"[SoL-Pi ObservationPack Handle: {obs_id} | Exit: {exit_code} | "

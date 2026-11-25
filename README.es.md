@@ -9,7 +9,7 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Bucle_Recursivo-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Cero Dependencias](https://img.shields.io/badge/Dependencias-Cero_(Python_Puro)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests OK](https://img.shields.io/badge/Tests-22%2F22_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests OK](https://img.shields.io/badge/Tests-32%2F32_Pasando_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Aprobado por Nichis](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
 > [!WARNING]
@@ -271,7 +271,7 @@ Usa su propio corpus (gcc, pytest, jest, cargo, un log con secretos, un `unittes
 | **ObservationPack**: archiva resultados > 10 KiB, los envía completos 2 solicitudes y luego handle + extracto de ~1 KB | Archivo + handle + head/tail + recall paginado + dedup; umbral de 10 KiB para salida que no es build | Un wrapper externo no puede reescribir resultados previos, así que la ventana de gracia de "completo las 2 primeras solicitudes" **no** está implementada (`grace_turns` solo gobierna la dedup de salida *idéntica* repetida). Los resultados grandes se empaquetan de inmediato. |
 | **Evidence-Preserving Reducer**: logs de build/test ≥ 4 KiB de un conjunto predefinido de comandos; lecturas/búsquedas lo evitan; un LLM barato extrae el recibo; verificador determinista (esquema, hash, exit, citas exactas, tamaño); fallback al original | Misma selección de comandos (`extra_command_regex` para ampliarla), mismo verificador y fail-open; extractor determinista por defecto, LLM opcional (`GEMINI_API_KEY`) | Ante credenciales sospechosas se **redactan** y se usa el recibo, mientras que el paper vuelve al log original. |
 
-## 🧪 Ejecutar las 22 Pruebas Automatizadas
+## 🧪 Ejecutar las 32 Pruebas Automatizadas
 
 ```bash
 python3 -m unittest discover -s tests -v

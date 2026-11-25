@@ -183,3 +183,36 @@ bucle de agente sobre la API, usando `solpi.reducer` / `solpi.observation_pack` 
 auditar los mecanismos del paper. Lo que cambiaría el veredicto: sesiones largas con resultados grandes *sin
 recortar*; vuelve a ejecutar `python3 benchmarks/analyze_sessions.py` sobre tu historial o
 `benchmarks/ab/run_ab.py` con tu agente.
+
+## 9. Bucle de agente propio sobre la API cruda (sin harness)
+
+**Corrección a los consejos de §3/§7: en los modelos actuales no se deben reescribir resultados viejos de herramientas
+desde el cliente.** El ObservationPack del paper cambia un resultado por un handle dos solicitudes después de enviarlo.
+Eso es una *edición del historial*. En los modelos Claude actuales (Sonnet 5.5, Opus 5.5, Fable/Mythos 5.x, Haiku 5.5)
+los bloques de pensamiento están ligados al prefijo exacto con el que se produjeron: editar un mensaje anterior da un
+400 (cuentas creadas desde el 2026-08-31) o, con `prefix_mismatch_behavior: "drop_block"`, descarta el razonamiento en
+silencio, y además invalida el caché de prompts desde ese punto. La forma autorizada de limpiar resultados viejos es la
+**edición de contexto del lado del servidor** (`clear_tool_uses_20250919`, beta `context-management-2025-06-27`), que
+no cuenta como edición.
+
+Por eso `benchmarks/api_loop/` compara cuatro políticas que solo añaden al historial, en un bucle mínimo sobre la API
+cruda (SDK oficial `anthropic`, caché de prompts activo, tres tareas largas de 30–60 llamadas a herramientas: 12 bugs
+independientes, un proyecto en C con seis defectos y una migración de API en 24 módulos):
+
+| Brazo | Qué ve el modelo |
+| :--- | :--- |
+| **N** ingenuo | salida cruda de la herramienta (≤ 100 KB) |
+| **T** recorte | head + tail de 8 KB de cada salida (lo que ya hacen los agentes) |
+| **S** sol-pi | build/test → recibo verificado; cualquier otro resultado ≥ 10 KiB → handle + extracto + `solpi_read_obs` (se decide al producir el resultado, así el historial solo crece) |
+| **C** ctx-edit | salida cruda + el propio `clear_tool_uses_20250919` de la API (umbral 30k tokens, conserva 3) |
+
+```bash
+pip install anthropic && export ANTHROPIC_API_KEY=...        # lo ejecutas tú: gasta tu crédito de API
+python3 benchmarks/api_loop/run_ab.py --out api_ab --reps 1 --total-budget 15
+```
+
+Imprime costo, turnos, tokens de cache-read, bytes de resultados y éxito por tarea y brazo, relativos a N. **Aún no lo
+ha ejecutado el autor** (no había API key en el entorno de desarrollo); el bucle, los brazos y las tareas están
+cubiertos por tests sin conexión con un cliente guionizado (`tests/test_api_loop.py`). Espera que T y C sean los
+competidores serios: si la edición de contexto de la propia API o un simple recorte head/tail iguala a S, este toolkit
+tampoco aporta nada sobre la API cruda.

@@ -484,6 +484,17 @@ class TestSoLPiMechanisms(unittest.TestCase):
         self.assertAlmostEqual(any_big["saved_mtok"], 10_000 * 0.9 * 16 / 1e6, places=2)
         self.assertGreater(any_big["pct_of_cache_read_if_no_compaction"], any_big["pct_of_cache_read"] * 2)
 
+    def test_one_giant_line_cannot_defeat_the_pack_and_recall_stays_exact(self) -> None:
+        store = ObservationPackStore(store_dir=self.tmp_path / "giant_store")
+        giant = "a" * 50_000 + " ERROR boom " + "b" * 5_000      # e.g. minified JSON / base64 on one line
+        res = store.pack(giant, exit_code=1, command="pytest -q")
+        self.assertTrue(res.was_packed)
+        self.assertLess(len(res.formatted_output), 4_000)            # excerpt lines are clipped...
+        self.assertIn("ERROR boom", res.formatted_output)            # ...and the quote is an exact window of the line
+        self.assertIn(giant, store.read_obs(res.obs_id, page=1))     # ...while recall returns the full original
+        plain = store.pack("x" * 60_000, exit_code=0, command="cat big.json")  # non build/test: handle + clipped excerpt
+        self.assertTrue(plain.was_packed and len(plain.formatted_output) < 4_000)
+
     def test_tune_is_repeatable_across_runs(self) -> None:
         first = run_auto_research_loop(capability_floor=0.95, quick=True)
         second = run_auto_research_loop(capability_floor=0.95, quick=True)

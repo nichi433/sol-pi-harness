@@ -179,6 +179,18 @@ def verify_receipt(
     return VerificationResult(True, "Verified")
 
 
+MAX_QUOTE_CHARS = 400
+
+
+def _quote_window(line: str) -> str:
+    """A very long line is quoted as an exact substring around its first diagnostic keyword (still verbatim)."""
+    if len(line) <= MAX_QUOTE_CHARS:
+        return line
+    m = DIAGNOSTIC_REGEX.search(line)
+    start = max(0, (m.start() if m else 0) - MAX_QUOTE_CHARS // 3)
+    return line[start:start + MAX_QUOTE_CHARS]
+
+
 def build_deterministic_receipt(
     raw_log: str,
     exit_code: int,
@@ -218,7 +230,7 @@ def build_deterministic_receipt(
                     break
                 if 0 <= c_idx < len(lines) and lines[c_idx].strip():
                     chosen.add(c_idx)
-    verbatim_quotes: List[str] = [lines[i] for i in sorted(chosen)]
+    verbatim_quotes: List[str] = [_quote_window(lines[i]) for i in sorted(chosen)]
 
     # Fallback if no diagnostic keyword matched (e.g. successful long test output)
     if not verbatim_quotes and lines:
