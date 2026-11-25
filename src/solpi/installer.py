@@ -134,72 +134,92 @@ def solpi_cli_command(src_dir: Path, python_exe: str) -> str:
     return f"{_env_prefix(src_dir)} {shlex.quote(python_exe)} -m solpi.cli"
 
 
-def hook_command(event: str, src_dir: Path, python_exe: str) -> str:
+def hook_command(event: str, src_dir: Path, python_exe: str, hook_mode: Optional[str] = None) -> str:
     cli = solpi_cli_command(src_dir, python_exe)
+    mode_env = f" SOLPI_HOOK_MODE={shlex.quote(hook_mode)}" if hook_mode else ""
     return (
-        f"{_env_prefix(src_dir)} {shlex.quote(python_exe)} -m {HOOK_MARKER} "
+        f"{_env_prefix(src_dir)}{mode_env} {shlex.quote(python_exe)} -m {HOOK_MARKER} "
         f"{event} {shlex.quote(cli)}"
     )
 
 
-def get_mcp_entry(repo_root: Optional[Path] = None) -> Dict[str, Any]:
-    """Portable MCP stdio entry (`command`/`args`/`env`) pointing to `solpi.mcp_server`."""
-    return {
-        "command": sys.executable or "python3",
-        "args": ["-m", "solpi.mcp_server"],
-        "env": {"PYTHONPATH": str(get_src_dir())},
-    }
+def get_mcp_entry(repo_root: Optional[Path] = None, hook_only: bool = False) -> Dict[str, Any]:
+    """Portable MCP stdio entry (`command`/`args`/`env`) pointing to `solpi.mcp_server`.
+
+    With `hook_only` the server advertises just `solpi_read_obs` (~140 tokens per request instead of ~735).
+    """
+    env = {"PYTHONPATH": str(get_src_dir())}
+    if hook_only:
+        env["SOLPI_MCP_TOOLS"] = "read"
+    return {"command": sys.executable or "python3", "args": ["-m", "solpi.mcp_server"], "env": env}
 
 
-def build_hooks_json(repo_root: Optional[Path] = None) -> Dict[str, Any]:
+def build_hooks_json(
+    repo_root: Optional[Path] = None, hook_only: bool = False, hook_mode: Optional[str] = None
+) -> Dict[str, Any]:
     """Antigravity (AGY) hooks.json block."""
     src, py = get_src_dir(), sys.executable or "python3"
-    return {
-        "sol-pi-observation-pack": {
-            "enabled": True,
-            "PreToolUse": [
-                {
-                    "matcher": "run_command|Bash|bash",
-                    "hooks": [{"type": "command", "command": hook_command("PreToolUse", src, py), "timeout": 10}],
-                }
-            ],
-            "PreInvocation": [
-                {"type": "command", "command": hook_command("PreInvocation", src, py), "timeout": 5}
-            ],
-        }
+    block: Dict[str, Any] = {
+        "enabled": True,
+        "PreToolUse": [
+            {
+                "matcher": "run_command|Bash|bash",
+                "hooks": [{"type": "command", "command": hook_command("PreToolUse", src, py, hook_mode), "timeout": 10}],
+            }
+        ],
     }
+    if not hook_only:  # the compaction notice points at `solpi_milestone`, which hook-only does not expose
+        block["PreInvocation"] = [
+            {"type": "command", "command": hook_command("PreInvocation", src, py), "timeout": 5}
+        ]
+    return {"sol-pi-observation-pack": block}
 
 
-def build_claude_style_hooks(bash_matcher: str) -> Dict[str, List[Dict[str, Any]]]:
+def build_claude_style_hooks(
+    bash_matcher: str, hook_only: bool = False, hook_mode: Optional[str] = None
+) -> Dict[str, List[Dict[str, Any]]]:
     """`hooks` section shared by Claude Code (settings.json) and Codex (hooks.json)."""
     src, py = get_src_dir(), sys.executable or "python3"
-    return {
+    hooks: Dict[str, List[Dict[str, Any]]] = {
         "PreToolUse": [
             {
                 "matcher": bash_matcher,
-                "hooks": [{"type": "command", "command": hook_command("PreToolUse", src, py), "timeout": 10}],
+                "hooks": [{"type": "command", "command": hook_command("PreToolUse", src, py, hook_mode), "timeout": 10}],
             }
-        ],
-        "UserPromptSubmit": [
-            {"hooks": [{"type": "command", "command": hook_command("UserPromptSubmit", src, py), "timeout": 5}]}
-        ],
+        ]
     }
+    if not hook_only:
+        hooks["UserPromptSubmit"] = [
+            {"hooks": [{"type": "command", "command": hook_command("UserPromptSubmit", src, py), "timeout": 5}]}
+        ]
+    return hooks
 
 
-def merge_claude_style_hooks(path: Path, bash_matcher: str, dry_run: bool) -> bool:
+def _is_solpi_group(group: Any) -> bool:
+    return isinstance(group, dict) and any(
+        HOOK_MARKER in str(h.get("command", "")) for h in (group.get("hooks") or []) if isinstance(h, dict)
+    )
+
+
+def merge_claude_style_hooks(
+    path: Path, bash_matcher: str, dry_run: bool, hook_only: bool = False, hook_mode: Optional[str] = None
+) -> bool:
     data = read_json_strict(path)
     hooks = data.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise InstallError(f"{path}: `hooks` is not an object; refusing to overwrite it.")
-    for event, groups in build_claude_style_hooks(bash_matcher).items():
+    wanted = build_claude_style_hooks(bash_matcher, hook_only, hook_mode)
+    # events we own but no longer want (hook-only drops UserPromptSubmit) lose our stale group
+    for event in ("PreToolUse", "UserPromptSubmit"):
+        if event not in wanted and isinstance(hooks.get(event), list):
+            hooks[event] = [g for g in hooks[event] if not _is_solpi_group(g)]
+            if not hooks[event]:
+                del hooks[event]
+    for event, groups in wanted.items():
         existing = hooks.get(event, [])
         if not isinstance(existing, list):
             raise InstallError(f"{path}: `hooks.{event}` is not a list; refusing to overwrite it.")
-        kept = [
-            g for g in existing
-            if not any(HOOK_MARKER in str(h.get("command", "")) for h in (g.get("hooks") or []) if isinstance(h, dict))
-        ]
-        hooks[event] = kept + groups
+        hooks[event] = [g for g in existing if not _is_solpi_group(g)] + groups
     return _save_json(path, data, dry_run)
 
 
@@ -327,54 +347,67 @@ def install_md_rules(dest: Path, dry_run: bool) -> str:
 # --------------------------------------------------------------------------- per-harness installers
 
 
-def _install_agy(base: Path, dry_run: bool, **_: Any) -> List[str]:
-    out = [
-        copy_skill_bundle(base / "skills", dry_run=dry_run),
-        merge_mcp_json(base / "mcp_config.json", "sol-pi", get_mcp_entry(), dry_run=dry_run),
-    ]
+def _install_agy(base: Path, dry_run: bool, hook_only: bool = False, hook_mode: Optional[str] = None, **_: Any) -> List[str]:
+    out: List[str] = []
+    if not hook_only:
+        out.append(copy_skill_bundle(base / "skills", dry_run=dry_run))
+    out.append(merge_mcp_json(base / "mcp_config.json", "sol-pi", get_mcp_entry(hook_only=hook_only), dry_run=dry_run))
     hooks_file = base / "hooks.json"
     hooks_data = read_json_strict(hooks_file)
-    hooks_data.update(build_hooks_json())
+    hooks_data.pop("sol-pi-observation-pack", None)
+    hooks_data.update(build_hooks_json(hook_only=hook_only, hook_mode=hook_mode))
     out.append(_status(_save_json(hooks_file, hooks_data, dry_run), "Merged AGY lifecycle hooks", hooks_file))
-    rules_file = base / "rules" / "sol-pi.md"
-    out.append(_status(_write_if_changed(rules_file, _rules_text(), dry_run), "SoL-Pi rule file", rules_file))
+    if not hook_only:
+        rules_file = base / "rules" / "sol-pi.md"
+        out.append(_status(_write_if_changed(rules_file, _rules_text(), dry_run), "SoL-Pi rule file", rules_file))
     return out
 
 
-def _install_claude(ws: Path, home: Path, scope: str, dry_run: bool, **_: Any) -> List[str]:
+def _install_claude(ws: Path, home: Path, scope: str, dry_run: bool, hook_only: bool = False,
+                    hook_mode: Optional[str] = None, **_: Any) -> List[str]:
     glob = scope == "global"
     base = (home / ".claude") if glob else (ws / ".claude")
     mcp_file = (home / ".claude.json") if glob else (ws / ".mcp.json")
     # Hooks embed absolute local paths, so a workspace install goes to the *local* (uncommitted) file.
     settings = base / ("settings.json" if glob else "settings.local.json")
-    out = [
-        copy_skill_bundle(base / "skills", dry_run=dry_run),
-        merge_mcp_json(mcp_file, "sol-pi", get_mcp_entry(), dry_run=dry_run),
-        _status(merge_claude_style_hooks(settings, "Bash", dry_run), "Merged Claude Code hooks", settings),
+    out: List[str] = []
+    if not hook_only:
+        out.append(copy_skill_bundle(base / "skills", dry_run=dry_run))
+    out += [
+        merge_mcp_json(mcp_file, "sol-pi", get_mcp_entry(hook_only=hook_only), dry_run=dry_run),
+        _status(merge_claude_style_hooks(settings, "Bash", dry_run, hook_only, hook_mode), "Merged Claude Code hooks", settings),
     ]
     if not glob:
         out.append("Note: Claude Code asks you to approve project-scoped `.mcp.json` servers on first use.")
     return out
 
 
-def _install_codex(ws: Path, home: Path, scope: str, dry_run: bool, **_: Any) -> List[str]:
+def _install_codex(ws: Path, home: Path, scope: str, dry_run: bool, hook_only: bool = False,
+                   hook_mode: Optional[str] = None, **_: Any) -> List[str]:
     glob = scope == "global"
     codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex")) if glob else (ws / ".codex")
     skills = (home / ".agents" / "skills") if glob else (ws / ".agents" / "skills")
     agents_md = (codex_home / "AGENTS.md") if glob else (ws / "AGENTS.md")
     hooks_file = codex_home / "hooks.json"
-    out = [
-        copy_skill_bundle(skills, dry_run=dry_run),
-        merge_codex_toml(codex_home / "config.toml", "sol-pi", get_mcp_entry(), dry_run=dry_run),
-        _status(merge_claude_style_hooks(hooks_file, "^Bash$", dry_run), "Merged Codex hooks", hooks_file),
-        install_md_rules(agents_md, dry_run),
+    out: List[str] = []
+    if not hook_only:
+        out.append(copy_skill_bundle(skills, dry_run=dry_run))
+    out += [
+        merge_codex_toml(codex_home / "config.toml", "sol-pi", get_mcp_entry(hook_only=hook_only), dry_run=dry_run),
+        _status(merge_claude_style_hooks(hooks_file, "^Bash$", dry_run, hook_only, hook_mode), "Merged Codex hooks", hooks_file),
     ]
+    if not hook_only:
+        out.append(install_md_rules(agents_md, dry_run))
     if not glob:
         out.append("Note: Codex loads project `.codex/` config and hooks only for trusted projects.")
     return out
 
 
-def _install_opencode(ws: Path, home: Path, scope: str, dry_run: bool, opencode_schema: str = "auto", **_: Any) -> List[str]:
+def _install_opencode(ws: Path, home: Path, scope: str, dry_run: bool, opencode_schema: str = "auto",
+                      hook_only: bool = False, **_: Any) -> List[str]:
+    if hook_only:
+        return ["[SKIP] opencode: it has no shell-hook API, so a hook-only install would have nothing to do "
+                "(use the full install: the agent then calls `solpi_run` itself)."]
     glob = scope == "global"
     cfg_dir = (home / ".config" / "opencode") if glob else ws
     cfg_file = cfg_dir / "opencode.json"
@@ -391,7 +424,9 @@ def _install_opencode(ws: Path, home: Path, scope: str, dry_run: bool, opencode_
     ]
 
 
-def _install_cursor(ws: Path, home: Path, scope: str, dry_run: bool, **_: Any) -> List[str]:
+def _install_cursor(ws: Path, home: Path, scope: str, dry_run: bool, hook_only: bool = False, **_: Any) -> List[str]:
+    if hook_only:
+        return ["[SKIP] cursor: it has no shell-hook API, so a hook-only install would have nothing to do."]
     base = (home / ".cursor") if scope == "global" else (ws / ".cursor")
     rules_dest = base / "rules" / "sol-pi.mdc"
     mdc = (
@@ -410,26 +445,36 @@ def install_for_target(
     workspace_dir: Optional[Path] = None,
     dry_run: bool = False,
     opencode_schema: str = "auto",
+    hook_only: bool = False,
+    hook_mode: Optional[str] = None,
 ) -> List[str]:
-    """Install SoL-Pi for one or all harnesses. Failures are reported as `[ERROR] ...` entries."""
+    """Install SoL-Pi for one or all harnesses. Failures are reported as `[ERROR] ...` entries.
+
+    `hook_only`: just the PreToolUse hook + an MCP server exposing only `solpi_read_obs` (~140 tokens of
+    fixed context per request instead of ~735); no skill, no rules, no compaction notice.
+    `hook_mode`: `safe` or `prefixed` (see `hook_runner.should_wrap_command`); stored in the hook command.
+    """
+    if hook_mode not in (None, "safe", "prefixed"):
+        return [f"[ERROR] invalid hook mode {hook_mode!r} (use safe or prefixed)"]
     ws = (workspace_dir or Path.cwd()).expanduser().resolve()
     home = Path.home()
     targets = ALL_TARGETS if target == "all" else [target]
     actions: List[str] = []
+    kw = dict(hook_only=hook_only, hook_mode=hook_mode)
 
     for tgt in targets:
         try:
             if tgt == "agy":
                 base = (home / ".gemini" / "config") if scope == "global" else (ws / ".agents")
-                actions += _install_agy(base, dry_run)
+                actions += _install_agy(base, dry_run, **kw)
             elif tgt == "claude":
-                actions += _install_claude(ws, home, scope, dry_run)
+                actions += _install_claude(ws, home, scope, dry_run, **kw)
             elif tgt == "codex":
-                actions += _install_codex(ws, home, scope, dry_run)
+                actions += _install_codex(ws, home, scope, dry_run, **kw)
             elif tgt == "opencode":
-                actions += _install_opencode(ws, home, scope, dry_run, opencode_schema=opencode_schema)
+                actions += _install_opencode(ws, home, scope, dry_run, opencode_schema=opencode_schema, hook_only=hook_only)
             elif tgt == "cursor":
-                actions += _install_cursor(ws, home, scope, dry_run)
+                actions += _install_cursor(ws, home, scope, dry_run, hook_only=hook_only)
             else:
                 actions.append(f"[ERROR] Unknown harness target: {tgt}")
         except (InstallError, OSError) as err:

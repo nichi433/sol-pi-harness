@@ -55,8 +55,13 @@ Codex/OpenCode. Claude Code defers MCP schemas, so its real cost is lower.
 
 Rule of thumb: over a session of *R* requests the fixed cost is ≈ `735 × R` cached-read tokens. One 10 KB output
 (≈ 2,500 tokens) produced mid-session is re-read ≈ *R*/2 times and a receipt removes ≈ 90 % of it →
-`2,250 × R/2 ≈ 1,100 × R`. **One big log per session roughly pays for the tools; two or more is a gain.** Sessions
-with no outputs over ~4 KB only pay the overhead.
+`2,250 × R/2 ≈ 1,100 × R`. **One big log per session roughly pays for the full install; two or more is a gain.**
+Sessions with no outputs over ~4 KB only pay the overhead.
+
+**Lean install** (`solpi install --hook-only`): only the hook plus an MCP server that advertises `solpi_read_obs` →
+**≈ 143 tokens per request** instead of ≈ 735, no skill/rules, no compaction notice. Break-even drops to any single
+result of about 1.3 KB or more (`143·R ≤ 0.9 × tokens × R/2`), i.e. **one ordinary ≥ 4 KiB log pays for it** (the
+hook only touches results that large anyway).
 
 ## 4. Who should use it
 
@@ -67,7 +72,7 @@ with no outputs over ~4 KB only pay the overhead.
 | Multi-agent / subagent swarms (paper: −27 % cost) | Worth trying |
 | Short, conversational, or read-and-edit sessions | **Not worth it** — nothing ≥ 4 KB to shrink |
 | Mostly `cat`/`grep`/file reads | **No.** Searches and file reads bypass the reducer by design (head/tail only above 10 KiB) |
-| You chain commands (`cd app && pytest`, `pytest \| tail`) | The **hook skips them on purpose** (safety), so coverage is lower than you think. Use `solpi_run` explicitly or loosen your habits |
+| You chain commands (`cd app && pytest`, `PYTHONPATH=src pytest`) | Covered by the default `prefixed` hook mode (see §4b). Pipes/redirects/`&` (`pytest \| tail`) are never rewritten |
 | Tasks where one missed log line is expensive | Be careful: the receipt is keyword-based; the handle recovers the rest but costs a turn |
 
 Per harness:
@@ -92,8 +97,25 @@ Per harness:
    twice (toolkit on/off, same model, fresh sessions), and compare total cost (`/cost`), number of requests,
    and whether the task passed. Per the paper, expect a *lower cost and possibly a slightly lower pass rate*; if
    you do not see the cost drop, uninstall.
-3. **Start lean:** install, then keep only what pays off — the hook and `solpi_read_obs`. Skip
-   `solpi_fuse`/`solpi_milestone` if the agent never uses them.
+3. **Start lean:** `solpi install --target claude --hook-only` keeps only what the benchmarks back — the hook and
+   `solpi_read_obs`. Add the full install later if the agent would actually use `solpi_fuse`/`solpi_milestone`.
+
+## 4b. Which commands does the hook rewrite? (`hook_mode`)
+
+A user-reported run of `analyze_sessions.py` over 112 real Claude Code sessions found the first, strictest rule never fired (0 results): almost
+every command Claude Code runs starts with `cd <dir> &&` or `VAR=val`. So there are two modes
+(`observation_pack.hook_mode` in `sol-pi.json`, or `solpi install --hook-mode`, default **`prefixed`**):
+
+| Mode | Rewritten | Never rewritten |
+| :--- | :--- | :--- |
+| `safe` | one simple build/test command | anything chained or with env vars |
+| `prefixed` (default) | also `cd <dir> && cmd`, `export VAR=val && cmd`, `VAR=val cmd` (≤ 2 prefixes, `&&`/`;`) with **allow-listed** vars only (`PYTHONPATH` project-relative, `CI`, `NODE_ENV`, `RUST_BACKTRACE`, …) | pipes, redirects, `&`, `$()`/backticks, `LD_PRELOAD`, `PATH`, `NODE_OPTIONS`, `PYTEST_ADDOPTS`, any other env var |
+
+Why so strict: the rewrite is **auto-approved** (`permissionDecision: allow`), so it must never let through something
+the original command's permission rules would have stopped. There is deliberately **no "wrap every command" mode**:
+that would auto-approve `rm -rf ~` too, and `solpi run` has no TTY/stdin and merges stderr. For other commands the
+agent can call `solpi_run` itself. The wrapped command also passes `--timeout` (≥ 30 min, above the harness's own
+Bash timeout) so long builds are not killed at `solpi run`'s 120 s default.
 
 ## 6. Limits we know about
 

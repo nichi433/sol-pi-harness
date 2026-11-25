@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -269,10 +270,43 @@ class TestSoLPiMechanisms(unittest.TestCase):
         self.assertTrue(should_wrap_command("cargo test --all"))
         self.assertFalse(should_wrap_command("ls -la"))
         self.assertFalse(should_wrap_command("solpi run --cmd 'pytest'"))
-        # Compound / piped / redirected commands must never be rewritten or auto-approved
+        # Compound / piped / redirected commands must never be rewritten or auto-approved in default "safe" mode
         for risky in ("pytest | tail", "pytest; rm -rf x", "cd x && pytest", "pytest > out.txt",
                       "pytest $(whoami)", "pytest `id`", "pytest\nrm x", "FOO=1 pytest"):
             self.assertFalse(should_wrap_command(risky), risky)
+        # "prefixed" mode: `cd <dir> && <test>` and harmless env prefixes are wrapped...
+        pre = lambda c: should_wrap_command(c, mode="prefixed")  # noqa: E731
+        for ok in ("cd backend && pytest -q", "cd a; cd b && cargo test", "PYTHONPATH=src pytest tests/",
+                   "CI=1 npm test", "export PYTHONPATH=src && pytest", "cd x && PYTHONPATH=src python3 -m unittest -v",
+                   "pytest -k 'a;b'"):
+            self.assertTrue(pre(ok), ok)
+        # ...while everything that could run something the user did not approve is still refused
+        for bad in ("cd backend && rm -rf /", "pytest | tail", "pytest & rm -rf ~", "cd x && pytest & rm -rf ~",
+                    "LD_PRELOAD=/tmp/e.so pytest", "export LD_PRELOAD=/tmp/e.so && pytest", "export PATH=/tmp/e:x && pytest",
+                    "PYTHONPATH=/tmp/evil pytest", "PYTHONPATH=../evil pytest", "NODE_OPTIONS=--require=/tmp/e.js npm test",
+                    "PYTEST_ADDOPTS='-p evil' pytest", "pytest -q && git push", "cd x && pytest && rm -rf y",
+                    "cd a && cd b && cd c && pytest", "cd x &&", "&& pytest", "pytest > out", "pytest $(id)", "rm -rf ~"):
+            self.assertFalse(pre(bad), bad)
+            self.assertFalse(should_wrap_command(bad), bad)  # and safe mode too
+        # the old unsafe "wrap everything" mode no longer exists: "all" behaves like "prefixed"
+        self.assertFalse(should_wrap_command("rm -rf ~", mode="all"))
+        self.assertFalse(should_wrap_command("cd /app && git diff", mode="all"))
+        self.assertFalse(should_wrap_command("cd backend && pytest", mode="safe"))
+        # hook mode comes from SOLPI_HOOK_MODE / config; default config is "prefixed"
+        payload = {"tool_name": "Bash", "tool_input": {"command": "cd app && pytest -q", "timeout": 3600000}}
+        out = dispatch_hook("PreToolUse", payload, solpi_bin="solpi")
+        upd = out["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(upd["command"], "solpi run --timeout 3660 --cmd 'cd app && pytest -q'")  # >= harness timeout
+        self.assertEqual(upd["timeout"], 3600000)
+        old_env = os.environ.get("SOLPI_HOOK_MODE")
+        os.environ["SOLPI_HOOK_MODE"] = "safe"
+        try:
+            self.assertEqual(dispatch_hook("PreToolUse", payload, solpi_bin="solpi"), {})
+        finally:
+            if old_env is None:
+                os.environ.pop("SOLPI_HOOK_MODE", None)
+            else:
+                os.environ["SOLPI_HOOK_MODE"] = old_env
         # a filename merely containing "solpi" is not an excuse to skip wrapping
         self.assertTrue(should_wrap_command("pytest tests/test_solpi.py"))
 
@@ -283,7 +317,7 @@ class TestSoLPiMechanisms(unittest.TestCase):
             solpi_bin="solpi",
         )
         self.assertEqual(hook_out["decision"], "allow")
-        self.assertIn("solpi run --cmd", hook_out["overwrite"]["CommandLine"])
+        self.assertIn("solpi run --timeout 1800 --cmd", hook_out["overwrite"]["CommandLine"])
 
         # Claude Code / Codex wire format: updatedInput keeps sibling fields
         cc = dispatch_hook(
@@ -295,7 +329,7 @@ class TestSoLPiMechanisms(unittest.TestCase):
         spec = cc["hookSpecificOutput"]
         self.assertEqual(spec["hookEventName"], "PreToolUse")
         self.assertEqual(spec["permissionDecision"], "allow")
-        self.assertEqual(spec["updatedInput"]["command"], "solpi run --cmd 'pytest -q'")
+        self.assertEqual(spec["updatedInput"]["command"], "solpi run --timeout 1800 --cmd 'pytest -q'")
         self.assertEqual(spec["updatedInput"]["timeout"], 5000)
         self.assertEqual(spec["updatedInput"]["description"], "t")
         # non-matching command / other tool -> empty reply (no decision, normal permission flow)
@@ -464,7 +498,7 @@ class TestSoLPiMechanisms(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         wrapped = json.loads(proc.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        self.assertIn("-m solpi.cli run --cmd 'pytest -q'", wrapped)
+        self.assertIn("-m solpi.cli run --timeout 1800 --cmd 'pytest -q'", wrapped)
         self.assertEqual(json.loads((ws_dir / ".codex/hooks.json").read_text())["hooks"]["PreToolUse"][0]["matcher"], "^Bash$")
 
         # Codex TOML + OpenCode JSON shape
@@ -494,6 +528,53 @@ class TestSoLPiMechanisms(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, msg=f"Standalone skill script failed: {proc.stderr}")
         self.assertIn("fused_actions_count", json.loads(proc.stdout))
+
+    def test_hook_only_install_is_lean(self) -> None:
+        import subprocess
+        ws = self.tmp_path / "ws_lean"
+        ws.mkdir()
+        full = install_for_target("all", workspace_dir=ws)
+        self.assertFalse([a for a in full if a.startswith("[ERROR]")], full)
+        self.assertIn("UserPromptSubmit", json.loads((ws / ".claude/settings.local.json").read_text())["hooks"])
+        # switching to hook-only replaces our entries and drops the stale compaction hook
+        acts = install_for_target("all", workspace_dir=ws, hook_only=True, hook_mode="safe")
+        self.assertFalse([a for a in acts if a.startswith("[ERROR]")], acts)
+        self.assertEqual(len([a for a in acts if a.startswith("[SKIP]")]), 2)  # opencode + cursor: no hook API
+        hooks = json.loads((ws / ".claude/settings.local.json").read_text())["hooks"]
+        self.assertEqual(list(hooks), ["PreToolUse"])
+        self.assertEqual(len(hooks["PreToolUse"]), 1)
+        self.assertIn("SOLPI_HOOK_MODE=safe", hooks["PreToolUse"][0]["hooks"][0]["command"])
+        self.assertEqual(json.loads((ws / ".mcp.json").read_text())["mcpServers"]["sol-pi"]["env"]["SOLPI_MCP_TOOLS"], "read")
+        self.assertIn('SOLPI_MCP_TOOLS = "read"', (ws / ".codex/config.toml").read_text())
+        agy = json.loads((ws / ".agents/hooks.json").read_text())["sol-pi-observation-pack"]
+        self.assertNotIn("PreInvocation", agy)
+        # fresh hook-only workspace: no skill, no rules, no opencode/cursor files at all
+        ws2 = self.tmp_path / "ws_lean2"
+        ws2.mkdir()
+        install_for_target("all", workspace_dir=ws2, hook_only=True)
+        self.assertFalse((ws2 / ".claude/skills").exists())
+        self.assertFalse((ws2 / "AGENTS.md").exists())
+        self.assertFalse((ws2 / "opencode.json").exists())
+        self.assertFalse((ws2 / ".cursor").exists())
+        # the installed hook command really works and honours the chosen mode
+        cmd = json.loads((ws / ".claude/settings.local.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        def run_hook(command: str) -> dict:
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True, cwd=str(ws),
+                               input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
+                               env={"PATH": "/usr/bin:/bin", "HOME": str(self.tmp_path)})
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return json.loads(p.stdout)
+        self.assertEqual(run_hook("cd app && pytest -q"), {})  # safe mode: not rewritten
+        self.assertIn("updatedInput", run_hook("pytest -q")["hookSpecificOutput"])
+        # the MCP server in read mode advertises exactly one tool, and it is small
+        env = dict(os.environ, SOLPI_MCP_TOOLS="read", PYTHONPATH=str(SRC_DIR))
+        p = subprocess.run([sys.executable, "-m", "solpi.mcp_server"], text=True, capture_output=True, env=env,
+                           input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n")
+        tools = json.loads(p.stdout.strip().splitlines()[0])["result"]["tools"]
+        self.assertEqual([t["name"] for t in tools], ["solpi_read_obs"])
+        self.assertLess(len(json.dumps(tools)) // 4, 200)
+        # invalid hook mode is rejected
+        self.assertTrue(install_for_target("claude", workspace_dir=ws, hook_mode="all")[0].startswith("[ERROR]"))
 
     def test_installer_never_clobbers_or_loses_user_config(self) -> None:
         ws = self.tmp_path / "ws_user_cfg"

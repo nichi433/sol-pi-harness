@@ -104,6 +104,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="OpenCode config schema: v1 `mcp.<name>` or v2 `mcp.servers.<name>` (default: auto-detect)",
     )
+    p_inst.add_argument(
+        "--hook-only",
+        action="store_true",
+        help="Lean install: only the PreToolUse hook + an MCP server exposing just solpi_read_obs "
+        "(~140 tokens/request instead of ~735). Skips skill, rules and the compaction notice; "
+        "skipped for OpenCode/Cursor (no hook API).",
+    )
+    p_inst.add_argument(
+        "--hook-mode",
+        choices=["safe", "prefixed"],
+        default=None,
+        help="Which commands the hook rewrites: safe = one simple build/test command; prefixed = also "
+        "`cd <dir> && cmd` and a few harmless `VAR=val` prefixes (default: prefixed)",
+    )
     p_inst.add_argument("--dry-run", action="store_true", help="Print actions without writing files")
 
     return parser
@@ -206,6 +220,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             workspace_dir=ws,
             dry_run=args.dry_run,
             opencode_schema=args.opencode_schema,
+            hook_only=args.hook_only,
+            hook_mode=args.hook_mode,
         )
         prefix = "[DRY-RUN] " if args.dry_run else "[OK] "
         failed = False

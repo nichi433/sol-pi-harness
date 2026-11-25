@@ -55,8 +55,13 @@ Codex/OpenCode. Claude Code difiere los esquemas MCP, así que su costo real es 
 
 Regla práctica: en una sesión de *R* solicitudes el costo fijo es ≈ `735 × R` tokens de lectura de caché. Una salida
 de 10 KB (≈ 2.500 tokens) a mitad de sesión se relee ≈ *R*/2 veces y un recibo quita ≈ 90 % →
-`2.250 × R/2 ≈ 1.100 × R`. **Un log grande por sesión más o menos paga las herramientas; dos o más es ganancia.**
+`2.250 × R/2 ≈ 1.100 × R`. **Un log grande por sesión más o menos paga la instalación completa; dos o más es ganancia.**
 Las sesiones sin salidas de más de ~4 KB solo pagan el costo fijo.
+
+**Instalación ligera** (`solpi install --hook-only`): solo el hook y un servidor MCP que anuncia `solpi_read_obs` →
+**≈ 143 tokens por solicitud** en vez de ≈ 735, sin skill/reglas ni aviso de compactación. El punto de equilibrio
+baja a cualquier resultado de ~1,3 KB o más (`143·R ≤ 0,9 × tokens × R/2`), es decir, **un log normal de ≥ 4 KiB la
+paga** (el hook solo toca resultados de ese tamaño de todos modos).
 
 ## 4. Quién debería usarlo
 
@@ -67,7 +72,7 @@ Las sesiones sin salidas de más de ~4 KB solo pagan el costo fijo.
 | Enjambres / subagentes (paper: −27 % costo) | Vale la pena probarlo |
 | Sesiones cortas, conversacionales o de leer y editar | **No vale la pena**: no hay nada ≥ 4 KB que reducir |
 | Sobre todo `cat`/`grep`/lectura de archivos | **No.** Búsquedas y lecturas se saltan el reducer por diseño (solo head/tail sobre 10 KiB) |
-| Encadenas comandos (`cd app && pytest`, `pytest \| tail`) | El **hook los omite a propósito** (seguridad), así que la cobertura es menor de lo que crees. Usa `solpi_run` explícitamente |
+| Encadenas comandos (`cd app && pytest`, `PYTHONPATH=src pytest`) | Los cubre el modo `prefixed` del hook, por defecto (ver §4b). Pipes/redirecciones/`&` (`pytest \| tail`) nunca se reescriben |
 | Tareas donde perder una línea de log es caro | Cuidado: el recibo se basa en palabras clave; el handle recupera el resto pero cuesta un turno |
 
 Por herramienta:
@@ -92,8 +97,26 @@ Por herramienta:
    ejecuta cada una dos veces (toolkit activado/desactivado, mismo modelo, sesiones nuevas) y compara costo total
    (`/cost`), número de solicitudes y si la tarea pasó. Según el paper, espera *menor costo y quizá una tasa de
    éxito algo menor*; si no ves bajar el costo, desinstala.
-3. **Empieza ligero:** instala y quédate solo con lo que rinde: el hook y `solpi_read_obs`. Descarta
-   `solpi_fuse`/`solpi_milestone` si el agente nunca los usa.
+3. **Empieza ligero:** `solpi install --target claude --hook-only` deja solo lo que respaldan los benchmarks: el
+   hook y `solpi_read_obs`. Añade la instalación completa después si el agente de verdad usaría
+   `solpi_fuse`/`solpi_milestone`.
+
+## 4b. ¿Qué comandos reescribe el hook? (`hook_mode`)
+
+Un usuario ejecutó `analyze_sessions.py` sobre 112 sesiones reales de Claude Code y reportó que la primera regla, la
+más estricta, nunca se activó (0 resultados): casi todos los comandos de Claude Code empiezan con `cd <dir> &&` o `VAR=val`. Por eso hay dos
+modos (`observation_pack.hook_mode` en `sol-pi.json`, o `solpi install --hook-mode`, por defecto **`prefixed`**):
+
+| Modo | Se reescribe | Nunca se reescribe |
+| :--- | :--- | :--- |
+| `safe` | un solo comando simple de build/test | cualquier cosa encadenada o con variables de entorno |
+| `prefixed` (defecto) | además `cd <dir> && cmd`, `export VAR=val && cmd`, `VAR=val cmd` (≤ 2 prefijos, `&&`/`;`) solo con variables **de una lista permitida** (`PYTHONPATH` relativo al proyecto, `CI`, `NODE_ENV`, `RUST_BACKTRACE`, …) | pipes, redirecciones, `&`, `$()`/backticks, `LD_PRELOAD`, `PATH`, `NODE_OPTIONS`, `PYTEST_ADDOPTS`, cualquier otra variable |
+
+Por qué tanta cautela: la reescritura se **aprueba automáticamente** (`permissionDecision: allow`), así que nunca debe
+dejar pasar algo que las reglas de permisos del comando original habrían frenado. A propósito **no existe un modo
+"envolver todo"**: aprobaría también `rm -rf ~`, y `solpi run` no tiene TTY/stdin y mezcla stderr. Para otros comandos
+el agente puede llamar a `solpi_run` por su cuenta. El comando envuelto además pasa `--timeout` (≥ 30 min, por encima
+del timeout propio del Bash del harness) para que un build largo no muera a los 120 s por defecto de `solpi run`.
 
 ## 6. Límites conocidos
 

@@ -19,11 +19,12 @@ even when the LLM calls native `run_command` or `Bash` directly:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .config import load_config
 
@@ -34,54 +35,159 @@ VERBOSE_CMD_REGEX = re.compile(
     r"go\s+test|tsc\b|mvn\s+(?:test|package|verify)|gradle\s+(?:test|build)|make\s+(?:test|check|all))\b"
 )
 
-# Any shell control/expansion syntax means the command is not a single simple command.
-# Wrapping such commands would change their semantics (pipes, redirects, `a && b`) and,
-# because the rewrite is auto-approved, could smuggle extra commands past permission rules.
-SHELL_META_REGEX = re.compile(r"[;&|<>`$()\n\\]")
+# The hook AUTO-APPROVES the rewritten command (`permissionDecision: allow`), so a rewrite must never let
+# anything run that the user's permission rules would not already have allowed for the original command.
+# Hence: no expansion/redirection/background syntax, and only a tiny, benign set of prefixes.
+UNSAFE_EXPANSION_REGEX = re.compile(r"[<>`$()\n\\]")
+ENV_VAR_ASSIGN_REGEX = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=([^\s;&|]*)$")
+
+# Environment variables that are harmless for a test/build run. Everything else (LD_PRELOAD, PATH,
+# BASH_ENV, NODE_OPTIONS, PYTEST_ADDOPTS, RUSTC_WRAPPER, GIT_*, ...) can execute arbitrary code or
+# change what runs, so a command carrying them is left to the normal permission flow.
+SAFE_ENV_VARS = frozenset({
+    "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED", "PYTHONHASHSEED", "CI", "NODE_ENV",
+    "FORCE_COLOR", "NO_COLOR", "TERM", "COLUMNS", "LANG", "LC_ALL", "TZ", "RUST_BACKTRACE", "RUST_LOG",
+    "CARGO_TERM_COLOR", "DEBUG", "VERBOSE", "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+})
+
+HOOK_MODES = ("safe", "prefixed")
 
 
-def should_wrap_command(cmd: str) -> bool:
-    """Return True for a *simple* verbose test/build command not already wrapped by solpi."""
-    if not cmd or SHELL_META_REGEX.search(cmd):
+def _safe_env_assignment(token: str) -> bool:
+    m = ENV_VAR_ASSIGN_REGEX.match(token)
+    if not m or m.group(1) not in SAFE_ENV_VARS:
         return False
+    value = m.group(2)
+    if m.group(1) == "PYTHONPATH":  # only project-relative paths: never point imports somewhere else
+        return not (value.startswith(("/", "~")) or ".." in value.split("/"))
+    return True
+
+
+def _tokenize(cmd: str) -> Optional[List[str]]:
+    """Shell tokens with operators split out (`&&`, `;`, `|`, `&`, `>`...). None if it cannot be parsed."""
     try:
-        tokens = shlex.split(cmd)
+        lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        return list(lex)
     except ValueError:
-        return False
-    if not tokens:
-        return False
-    first = Path(tokens[0]).name
-    if first.startswith("solpi") or first == "env" or "=" in tokens[0]:
-        return False
-    return bool(VERBOSE_CMD_REGEX.search(cmd))
+        return None
 
 
-def build_wrapped_command(cmd: str, solpi_bin: str = "solpi") -> str:
-    """`solpi_bin` is trusted shell text (may be several words, already quoted by the installer)."""
-    return f"{solpi_bin} run --cmd {shlex.quote(cmd)}"
+def _is_operator(tok: str) -> bool:
+    return bool(tok) and all(c in "();<>|&" for c in tok)
+
+
+def _verbose_segment(tokens: List[str], allow_env: bool) -> bool:
+    """`[VAR=val ...] <known build/test command ...>` that is not already wrapped by solpi."""
+    idx = 0
+    while idx < len(tokens) and ENV_VAR_ASSIGN_REGEX.match(tokens[idx]):
+        if not allow_env or not _safe_env_assignment(tokens[idx]):
+            return False
+        idx += 1
+    if idx >= len(tokens):
+        return False
+    first = Path(tokens[idx]).name
+    if first.startswith("solpi") or first == "env":
+        return False
+    return bool(VERBOSE_CMD_REGEX.search(" ".join(tokens[idx:])))
+
+
+def _safe_prefix(segment: List[str]) -> bool:
+    """`cd <dir>` or `export SAFE_VAR=val ...`."""
+    if len(segment) == 2 and segment[0] == "cd":
+        return not _is_operator(segment[1])
+    return len(segment) >= 2 and segment[0] == "export" and all(_safe_env_assignment(t) for t in segment[1:])
+
+
+def should_wrap_command(cmd: str, *, mode: str = "safe") -> bool:
+    """Decide whether `PreToolUse` should wrap `cmd` with `solpi run`.
+
+    Modes (`observation_pack.hook_mode`):
+    - `"safe"` (default): one simple build/test command, nothing else.
+    - `"prefixed"`: additionally `cd <dir> && <cmd>`, `export SAFE=val && <cmd>` and `SAFE=val <cmd>`
+      (chained with `&&` or `;`, at most 2 prefixes). Pipes, redirections, `&`, expansions and any env var
+      outside `SAFE_ENV_VARS` (e.g. `LD_PRELOAD`, `PATH`) are still refused.
+
+    There is intentionally no "wrap everything" mode: the rewrite is auto-approved, so wrapping arbitrary
+    commands would bypass the user's permission rules, and `solpi run` has no TTY/stdin and merges stderr.
+    Unknown values (including the removed `"all"`) fall back to `"prefixed"`/`"safe"` behaviour below.
+    """
+    if not cmd or not cmd.strip() or UNSAFE_EXPANSION_REGEX.search(cmd):
+        return False
+    tokens = _tokenize(cmd.strip())
+    if not tokens or any(_is_operator(t) and t not in ("&&", ";") for t in tokens):
+        return False
+    if mode not in HOOK_MODES:
+        mode = "prefixed" if mode == "all" else "safe"
+
+    segments: List[List[str]] = [[]]
+    for tok in tokens:
+        if tok in ("&&", ";"):
+            if not segments[-1]:
+                return False  # `&& x`, `; ;`
+            segments.append([])
+        else:
+            segments[-1].append(tok)
+    if not segments[-1]:
+        segments.pop()  # trailing `;`
+    if not segments:
+        return False
+
+    if mode == "safe":
+        return len(segments) == 1 and _verbose_segment(segments[0], allow_env=False)
+    return (
+        len(segments) <= 3
+        and all(_safe_prefix(seg) for seg in segments[:-1])
+        and _verbose_segment(segments[-1], allow_env=True)
+    )
+
+
+def build_wrapped_command(cmd: str, solpi_bin: str = "solpi", timeout_sec: Optional[int] = None) -> str:
+    """`solpi_bin` is trusted shell text (may be several words, already quoted by the installer).
+
+    `solpi run` kills the command after `--timeout` seconds (default 120), which is shorter than a long
+    build the harness would have allowed, so the timeout is passed explicitly.
+    """
+    extra = f" --timeout {int(timeout_sec)}" if timeout_sec else ""
+    return f"{solpi_bin} run{extra} --cmd {shlex.quote(cmd)}"
+
+
+def _timeout_for(tool_input: Dict[str, Any]) -> int:
+    """Harness Bash timeouts are milliseconds (Claude Code); stay above them so the harness decides."""
+    raw = tool_input.get("timeout")
+    secs = int(raw) // 1000 if isinstance(raw, (int, float)) and raw > 0 else 0
+    return max(1800, secs + 60)
 
 
 _REASON = "SoL-Pi Hook: routed verbose test/build command through ObservationPack."
 
 
-def process_pre_tool_use(payload: Dict[str, Any], solpi_bin: str = "solpi") -> Dict[str, Any]:
+def process_pre_tool_use(
+    payload: Dict[str, Any],
+    solpi_bin: str = "solpi",
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Handle `PreToolUse`.
 
     Two wire formats are supported:
     - Antigravity (AGY): `{"toolCall": {"name", "args"}}` -> reply `{"decision", "overwrite"}`.
     - Claude Code / Codex: `{"tool_name", "tool_input"}` -> reply `hookSpecificOutput.updatedInput`.
     """
+    cfg = config or load_config()
+    # SOLPI_HOOK_MODE (set by `solpi install --hook-mode`) wins over sol-pi.json `observation_pack.hook_mode`
+    hook_mode = os.environ.get("SOLPI_HOOK_MODE") or str(cfg.get("observation_pack", {}).get("hook_mode", "prefixed"))
+
     if "toolCall" in payload:
         tool_call = payload.get("toolCall") or {}
         tool_name = tool_call.get("name", "")
         args = tool_call.get("args") or {}
         if tool_name in ("run_command", "Bash", "bash"):
             key = "CommandLine" if "CommandLine" in args else ("command" if "command" in args else None)
-            if key and should_wrap_command(str(args.get(key, ""))):
+            if key and should_wrap_command(str(args.get(key, "")), mode=hook_mode):
                 return {
                     "decision": "allow",
                     "reason": _REASON,
-                    "overwrite": {key: build_wrapped_command(str(args[key]), solpi_bin)},
+                    "overwrite": {key: build_wrapped_command(str(args[key]), solpi_bin, 1800)},
                 }
         return {"decision": "allow"}
 
@@ -89,10 +195,10 @@ def process_pre_tool_use(payload: Dict[str, Any], solpi_bin: str = "solpi") -> D
     tool_input = payload.get("tool_input")
     if tool_name == "Bash" and isinstance(tool_input, dict):
         original = tool_input.get("command")
-        if isinstance(original, str) and should_wrap_command(original):
+        if isinstance(original, str) and should_wrap_command(original, mode=hook_mode):
             # `updatedInput` replaces the whole input, so keep every other field (timeout, ...).
             updated = dict(tool_input)
-            updated["command"] = build_wrapped_command(original, solpi_bin)
+            updated["command"] = build_wrapped_command(original, solpi_bin, _timeout_for(tool_input))
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",

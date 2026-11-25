@@ -9,7 +9,7 @@
 [![arXiv:2609.20519](https://img.shields.io/badge/arXiv-2609.20519-ff7eb3?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.20519)
 [![Harness2 RSI](https://img.shields.io/badge/Harness%C2%B2-Recursive_Loop-8b6bff?style=for-the-badge)](https://github.com/google-research/harness2)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero_(Pure_Python)-7ef2e4?style=for-the-badge&logo=python&logoColor=18122b)](./pyproject.toml)
-[![Tests Passing](https://img.shields.io/badge/Tests-21%2F21_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
+[![Tests Passing](https://img.shields.io/badge/Tests-22%2F22_Passing_🐾-ffd280?style=for-the-badge)](./tests/test_solpi.py)
 [![Nichi Approved](https://img.shields.io/badge/Nichi_Approved-uwu_😻-ff9ecd?style=for-the-badge)](./README.es.md)
 
 *Don't let your AI coding agent become a chonky log-hoarding cat (`4.8M tokens`). Keep it agile like a **Nichi** (`-92%` on build/test log payloads in our [benchmark](#-reproducible-benchmark), `100% recoverable evidence`, zero hallucinations)! 🐾✨*
@@ -182,7 +182,9 @@ The installer never overwrites a config file it cannot parse, keeps a one-time `
 
 When installed in **Claude Code**, **Codex** or **Antigravity (AGY)**, `solpi install` registers a `PreToolUse` interceptor on the shell tool (`Bash` / `run_command`). Claude Code and Codex get the rewrite through `hookSpecificOutput.updatedInput`; AGY through `overwrite`. (The root-level `hooks.json` is only a template — use `solpi install`.)
 
-Whenever the agent runs a **simple** `pytest`, `python3 -m unittest`, `cargo test`, `npm test`, `go test`, or `tsc` command, the hook **transparently rewrites it** to pass through `solpi run`. Compound commands (`&&`, `;`, pipes, redirects, `$(...)`) are deliberately left untouched, because the rewrite is auto-approved and must not alter semantics or bypass permission rules.
+Whenever the agent runs `pytest`, `python3 -m unittest`, `cargo test`, `npm test`, `go test`, `tsc`… the hook **transparently rewrites it** to pass through `solpi run`. In the default `prefixed` mode this includes `cd <dir> && <cmd>` and a few allow-listed `VAR=val` prefixes (real Claude Code commands almost always start that way); pipes, redirects, `&`, `$(...)` and risky env vars (`LD_PRELOAD`, `PATH`, `NODE_OPTIONS`…) are never rewritten, because the rewrite is auto-approved and must not bypass permission rules. Set `solpi install --hook-mode safe` for the strictest behaviour. Details: [docs/WHEN_IT_HELPS.md §4b](./docs/WHEN_IT_HELPS.md).
+
+**Lean install:** `solpi install --target claude --hook-only` installs only the hook plus a one-tool MCP server (`solpi_read_obs`, ≈ 143 tokens per request instead of ≈ 735); no skill, rules or compaction notice.
 
 ```text
 > Agent calls: run_command(CommandLine="python3 -m unittest discover -s tests")
@@ -266,12 +268,12 @@ It uses its own corpus (gcc, pytest, jest, cargo, a log with secrets, a real `un
 | **ObservationPack**: archive results > 10 KiB, send them in full for 2 requests, then a handle + ~1 KB head/tail excerpt | Archive + handle + head/tail + paged recall + dedup; threshold 10 KiB for non-build output | An external wrapper cannot rewrite earlier tool results, so the "full for the first two requests" grace window is **not** implemented (`grace_turns` only governs dedup of *identical* repeated output). Large results are packed immediately. |
 | **Evidence-Preserving Reducer**: build/test logs ≥ 4 KiB from a predefined command set; file reads/searches bypass; low-cost LLM extracts a receipt; deterministic verifier (schema, source hash, exit status, exact quotes, size); fall back to original on failure | Same command gating (`extra_command_regex` to extend), same verifier and fail-open; deterministic extractor by default, optional LLM (`GEMINI_API_KEY`) | Suspected credentials are **redacted** and the receipt still used, where the paper falls back to the original log. |
 
-## 🧪 Running the 21-Test Verification Suite
+## 🧪 Running the 22-Test Verification Suite
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
-All 21 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
+All 22 unit and end-to-end subprocess tests (covering Action Fusion syntax gates, ObservationPack CAS & deduplication, Fail-Open 1-char hallucination rejection, secret redaction, KV-cache compaction math, RSI tuning, MCP stdio JSON-RPC pipes, Hook command rewriting, and `NVlabs/SoL-Pi` `sol-pi.json` schema parity) run in **`~0.22s`**.
 
 ---
 

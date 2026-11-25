@@ -8,11 +8,13 @@ prompt cache - on every later request:
 
     saved cache-read tokens  =  result_tokens x reduction x later_requests
     net                      =  saved  -  (MCP schema tokens x total requests)      # fixed cost of having the tools
+                                 (~735 tokens full install, ~143 with `solpi install --hook-only`)
 
 Scenarios:
-  hook_only   results whose command the hook rewrites today (a *simple* build/test command, no `&&`/pipes)
-  reducible   every build/test-looking command (what `solpi_run` / a looser hook could cover)
-  all_big     every result >= 10 KiB regardless of command (upper bound; ignores that the agent may need
+  hook_only     results the hook rewrites in `safe` mode (one simple build/test command, no `&&`/pipes)
+  hook_prefixed results the hook rewrites in `prefixed` mode (also `cd <dir> && cmd`, harmless `VAR=val`)
+  reducible     every build/test-looking command (what `solpi_run` could cover)
+  all_big       every result >= 10 KiB regardless of command (upper bound; ignores that the agent may need
               extra `solpi_read_obs` calls and that file reads/searches are only head/tail-packed)
 
 Caveats: token counts are chars/4; `later_requests` ignores auto-compaction (an upper bound); it does NOT
@@ -34,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from solpi.hook_runner import should_wrap_command  # noqa: E402
 from solpi.reducer import is_reducible_command  # noqa: E402
 
+LEAN_SCHEMA_TOKENS = 143  # `solpi install --hook-only`: only solpi_read_obs is advertised
 BIG_REDUCIBLE = 4096
 BIG_ANY = 10240
 
@@ -86,9 +89,15 @@ def analyze_session(path: Path) -> Dict[str, Any]:
     return {"requests": requests, "cache_read": cache_read, "results": results}
 
 
-def analyze(paths: List[Path], reduction: float, price_per_mtok: float, schema_tokens: int) -> Dict[str, Any]:
+def analyze(paths: List[Path], reduction: float, price_per_mtok: float, schema_tokens: int,
+            lean_schema_tokens: int = LEAN_SCHEMA_TOKENS) -> Dict[str, Any]:
     tot_requests = tot_cache = n_bash = 0
-    big = {"hook_only": [0, 0.0], "reducible": [0, 0.0], "all_big": [0, 0.0]}  # [count, saved tokens]
+    big = {
+        "hook_only": [0, 0.0],
+        "hook_prefixed": [0, 0.0],
+        "reducible": [0, 0.0],
+        "all_big": [0, 0.0],
+    }  # [count, saved tokens]
     big_bytes = bash_bytes = 0
     for p in paths:
         s = analyze_session(p)
@@ -106,14 +115,19 @@ def analyze(paths: List[Path], reduction: float, price_per_mtok: float, schema_t
             if r["chars"] >= BIG_REDUCIBLE and is_reducible_command(r["cmd"]):
                 big["reducible"][0] += 1
                 big["reducible"][1] += tokens * reduction * later
-                if should_wrap_command(r["cmd"]):
+                if should_wrap_command(r["cmd"], mode="safe"):
                     big["hook_only"][0] += 1
                     big["hook_only"][1] += tokens * reduction * later
+                if should_wrap_command(r["cmd"], mode="prefixed"):
+                    big["hook_prefixed"][0] += 1
+                    big["hook_prefixed"][1] += tokens * reduction * later
     overhead_tokens = schema_tokens * tot_requests
+    lean_overhead = lean_schema_tokens * tot_requests
     out: Dict[str, Any] = {
         "sessions": len(paths), "requests": tot_requests, "bash_results": n_bash,
         "bash_result_mb": round(bash_bytes / 1e6, 2), "total_cache_read_mtok": round(tot_cache / 1e6, 1),
-        "fixed_overhead_mtok": round(overhead_tokens / 1e6, 2), "scenarios": {},
+        "fixed_overhead_mtok": round(overhead_tokens / 1e6, 2),
+        "lean_overhead_mtok": round(lean_overhead / 1e6, 2), "scenarios": {},
     }
     for name, (cnt, saved) in big.items():
         net = saved - overhead_tokens
@@ -124,6 +138,9 @@ def analyze(paths: List[Path], reduction: float, price_per_mtok: float, schema_t
             "net_mtok_after_overhead": round(net / 1e6, 2),
             "net_usd_at_price": round(net / 1e6 * price_per_mtok, 2),
             "pays_off": net > 0,
+            # `solpi install --hook-only` advertises just solpi_read_obs (smaller fixed cost per request)
+            "net_mtok_hook_only_install": round((saved - lean_overhead) / 1e6, 2),
+            "net_usd_hook_only_install": round((saved - lean_overhead) / 1e6 * price_per_mtok, 2),
         }
     return out
 
@@ -147,10 +164,11 @@ def main() -> int:
         return 0
     print(f"{res['sessions']} sessions | {res['requests']} requests | {res['bash_results']} Bash results "
           f"({res['bash_result_mb']} MB) | cache-read {res['total_cache_read_mtok']} Mtok | "
-          f"tool-schema overhead {res['fixed_overhead_mtok']} Mtok")
+          f"tool-schema overhead {res['fixed_overhead_mtok']} Mtok full / {res['lean_overhead_mtok']} Mtok hook-only")
     for name, m in res["scenarios"].items():
-        print(f"  {name:10} results={m['results']:5}  saved={m['saved_mtok']:8} Mtok ({m['pct_of_cache_read']:5}% of cache-read)"
-              f"  net={m['net_mtok_after_overhead']:8} Mtok = ${m['net_usd_at_price']:8}  {'PAYS OFF' if m['pays_off'] else 'does not pay off'}")
+        print(f"  {name:13} results={m['results']:5}  saved={m['saved_mtok']:8} Mtok ({m['pct_of_cache_read']:5}% of cache-read)"
+              f"  net(full)=${m['net_usd_at_price']:8} {'PAYS OFF' if m['pays_off'] else 'no':8}"
+              f"  net(hook-only)=${m['net_usd_hook_only_install']:8}")
     print("\nUpper-bound estimate: see the caveats at the top of this file (no extra recall turns, no quality change).")
     return 0
 

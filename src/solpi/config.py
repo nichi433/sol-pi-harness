@@ -20,6 +20,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": True,
         "threshold_bytes": 10240,
         "grace_turns": 2,
+        "hook_mode": "prefixed",
         "head_lines": 4,
         "tail_lines": 5,
         "page_size_lines": 80,

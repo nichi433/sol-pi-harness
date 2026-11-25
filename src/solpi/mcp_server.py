@@ -157,15 +157,24 @@ TOOLS_SCHEMA = [
 ]
 
 
-# Every listed tool costs context tokens on EVERY request. The developer tools stay callable but are only
-# advertised when SOLPI_MCP_TOOLS=all (default "core": fuse, run, read_obs, milestone).
+# Every listed tool costs context tokens on EVERY request, so the surface is configurable with
+# SOLPI_MCP_TOOLS: "core" (default: fuse, run, read_obs, milestone), "all" (+ tune, telemetry),
+# "read" (only solpi_read_obs: for hook-only installs, where the hook does the packing) or a
+# comma-separated list of tool names. Unlisted tools stay callable; they are just not advertised.
 CORE_TOOLS = {"solpi_fuse", "solpi_run", "solpi_read_obs", "solpi_milestone"}
 
 
 def listed_tools() -> list:
-    if os.environ.get("SOLPI_MCP_TOOLS", "core").lower() == "all":
+    spec = os.environ.get("SOLPI_MCP_TOOLS", "core").strip().lower()
+    if spec == "all":
         return TOOLS_SCHEMA
-    return [t for t in TOOLS_SCHEMA if t["name"] in CORE_TOOLS]
+    if spec == "read":
+        names = {"solpi_read_obs"}
+    elif spec in ("", "core"):
+        names = CORE_TOOLS
+    else:
+        names = {n.strip() for n in spec.split(",") if n.strip()}
+    return [t for t in TOOLS_SCHEMA if t["name"] in names]
 
 
 def execute_mcp_tool(name: str, arguments: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
